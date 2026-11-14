@@ -1,0 +1,19 @@
+{
+  "domains": {
+    "notes": "src/notes/**",
+    "editor": "src/editor/**",
+    "preview": "src/preview/**"
+  },
+  "spine": [
+    "src/shared/**",
+    "src/main.ts",
+    "index.html",
+    "vite.config.ts",
+    "vitest.config.ts",
+    "tsconfig.json",
+    "package.json",
+    "pnpm-lock.yaml",
+    "eslint.config.js",
+    ".prettierrc*"
+  ]
+}
