@@ -1,0 +1,101 @@
+/* Applied to the preview pane by the editor story's consumer: class="preview". */
+.preview {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  line-height: var(--leading-relaxed);
+  overflow-wrap: anywhere;
+}
+
+.preview h1,
+.preview h2,
+.preview h3,
+.preview h4,
+.preview h5,
+.preview h6 {
+  line-height: var(--leading-tight);
+  margin: var(--spacing-6) 0 var(--spacing-3);
+}
+
+.preview h1 {
+  font-size: var(--text-3xl);
+}
+.preview h2 {
+  font-size: var(--text-2xl);
+}
+.preview h3 {
+  font-size: var(--text-xl);
+}
+.preview h4 {
+  font-size: var(--text-lg);
+}
+.preview h5,
+.preview h6 {
+  font-size: var(--text-base);
+}
+
+.preview p {
+  margin: 0 0 var(--spacing-4);
+}
+
+.preview code,
+.preview pre {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.preview code {
+  padding: 0 var(--spacing-1);
+}
+
+.preview pre {
+  padding: var(--spacing-3);
+  overflow-x: auto;
+  line-height: var(--leading-normal);
+}
+
+.preview pre code {
+  border: 0;
+  padding: 0;
+  background: none;
+}
+
+.preview blockquote {
+  margin: 0 0 var(--spacing-4);
+  padding-left: var(--spacing-4);
+  border-left: 3px solid var(--border);
+  color: var(--muted);
+}
+
+.preview table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+  margin: 0 0 var(--spacing-4);
+}
+
+.preview th,
+.preview td {
+  border: 1px solid var(--border);
+  padding: var(--spacing-2) var(--spacing-3);
+  text-align: left;
+}
+
+.preview th {
+  background: var(--surface);
+  font-weight: 700;
+}
+
+.preview s {
+  color: var(--muted);
+}
+
+.preview a {
+  color: var(--primary);
+  text-decoration: underline;
+}

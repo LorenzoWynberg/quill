@@ -1,5 +1,6 @@
 import './shared/theme.css';
 import './shared/shell.css';
+import './preview/preview.css';
 
 const app = document.getElementById('app');
 
