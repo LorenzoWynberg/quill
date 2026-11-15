@@ -1655,6 +1655,25 @@ describe('select mode', () => {
       toggle().focus();
       vi.advanceTimersByTime(5000);
       expect(toast().hidden).toBe(true);
+      // Focus leaving while the pointer stays over the toast keeps it paused,
+      // and a batch shown under the pointer starts paused too.
+      btn('Archived (2)').click();
+      btn('Select all').click();
+      bulk().click();
+      toast().dispatchEvent(new MouseEvent('mouseenter'));
+      undo().focus();
+      toggle().focus();
+      vi.advanceTimersByTime(8000);
+      expect(toast().hidden).toBe(false);
+      btn('Notes').click();
+      btn('Select all').click();
+      bulk().click();
+      expect(toast().textContent).toBe('2 notes archivedUndo');
+      vi.advanceTimersByTime(8000);
+      expect(toast().hidden).toBe(false);
+      toast().dispatchEvent(new MouseEvent('mouseleave'));
+      vi.advanceTimersByTime(5000);
+      expect(toast().hidden).toBe(true);
     });
 
     it('Undo inverts an archive batch in one call and focuses the view toggle', () => {

@@ -249,7 +249,8 @@ export function mountNoteList(
     toastText.textContent = `${plural(ids.length)} ${archived ? 'archived' : 'restored'}`;
     if (toast.firstChild !== toastText) toast.replaceChildren(toastText, undo);
     toast.hidden = false;
-    startTimer();
+    if (hovered) stopTimer();
+    else startTimer();
   }
   toast.addEventListener('focusin', stopTimer);
   toast.addEventListener('focusout', (e) => {
