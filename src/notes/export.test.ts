@@ -35,9 +35,40 @@ describe('noteFilename', () => {
     expect(name).toBe(`${'a'.repeat(79)}😀.md`);
     expect(name).not.toMatch(/[\ud800-\udbff](?![\udc00-\udfff])/);
   });
+
+  it('collapses whitespace and drops trailing dots', () => {
+    expect(noteFilename({ body: '# Plan  for  May...' })).toBe(
+      'Plan for May.md',
+    );
+    expect(noteFilename({ body: '# Draft. . .' })).toBe('Draft.md');
+    expect(noteFilename({ body: '# a   b\t   c' })).toBe('a b c.md');
+    expect(noteFilename({ body: '# v1.2 notes' })).toBe('v1.2 notes.md');
+  });
+
+  it('falls back to Untitled for dots-only titles', () => {
+    expect(noteFilename({ body: '# ...' })).toBe('Untitled.md');
+    expect(noteFilename({ body: '# . . .' })).toBe('Untitled.md');
+  });
+
+  it('strips trailing dots or spaces exposed by the cap', () => {
+    for (const sep of ['.', ' ']) {
+      const name = noteFilename({
+        body: `# ${'a'.repeat(79)}${sep}${'b'.repeat(120)}`,
+      });
+      expect(name).not.toMatch(/[.\s]\.md$/);
+      expect(name.length).toBeLessThanOrEqual(83);
+    }
+  });
 });
 
 describe('uniqueFilenames', () => {
+  it('dedupes names that differ only by trailing dots', () => {
+    expect(uniqueFilenames([{ body: 'Plan' }, { body: 'Plan...' }])).toEqual([
+      'Plan.md',
+      'Plan (2).md',
+    ]);
+  });
+
   it('dedupes case-insensitively', () => {
     expect(
       uniqueFilenames([{ body: 'Todo' }, { body: 'todo' }, { body: 'Todo' }]),
