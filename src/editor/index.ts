@@ -1,4 +1,4 @@
-import { exportNote } from '../notes';
+import { exportNote, normaliseTag, sameTag } from '../notes';
 import type { NotesStore } from '../notes';
 
 export interface EditorDeps {
@@ -39,7 +39,28 @@ export function mountEditor(root: HTMLElement, deps: EditorDeps): EditorHandle {
   exportBtn.disabled = true;
   header.append(exportBtn);
 
-  root.replaceChildren(header, empty, label, textarea);
+  const tagField = document.createElement('div');
+  tagField.className = 'tag-field';
+  tagField.setAttribute('role', 'group');
+  tagField.setAttribute('aria-labelledby', 'tag-field-label');
+  const tagLabel = document.createElement('span');
+  tagLabel.id = 'tag-field-label';
+  tagLabel.className = 'tag-field-label';
+  tagLabel.textContent = 'Tags';
+  const chips = document.createElement('ul');
+  chips.className = 'tag-chips';
+  const tagInput = document.createElement('input');
+  tagInput.type = 'text';
+  tagInput.id = 'tag-input';
+  tagInput.setAttribute('aria-label', 'Add tag');
+  tagInput.setAttribute('aria-describedby', 'tag-msg');
+  const msg = document.createElement('div');
+  msg.id = 'tag-msg';
+  msg.className = 'tag-msg';
+  msg.setAttribute('aria-live', 'polite');
+  tagField.append(tagLabel, chips, tagInput, msg);
+
+  root.replaceChildren(header, empty, label, textarea, tagField);
 
   const main = root.parentElement;
   let showEditPane = (): void => {};
@@ -90,8 +111,94 @@ export function mountEditor(root: HTMLElement, deps: EditorDeps): EditorHandle {
     textarea.hidden = !has;
     label.hidden = !has;
     exportBtn.disabled = !has;
+    tagField.hidden = !has;
+    renderChips();
     previewEl.innerHTML = has ? render(textarea.value) : '';
   }
+
+  function tagsOf(id: string | null): readonly string[] {
+    if (id === null) return [];
+    return store.getState().notes.find((n) => n.id === id)?.tags ?? [];
+  }
+
+  function renderChips(): void {
+    const items = tagsOf(currentId).map((tag) => {
+      const li = document.createElement('li');
+      li.className = 'tag-chip';
+      const text = document.createElement('span');
+      text.textContent = tag;
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'tag-remove';
+      btn.textContent = 'Remove';
+      btn.setAttribute('aria-label', `Remove tag "${tag}"`);
+      btn.addEventListener('click', () => removeTag(tag));
+      li.append(text, btn);
+      return li;
+    });
+    chips.replaceChildren(...items);
+  }
+
+  function removeTag(tag: string): void {
+    if (currentId === null) return;
+    const tags = tagsOf(currentId);
+    const idx = tags.indexOf(tag);
+    store.setTags(
+      currentId,
+      tags.filter((t) => t !== tag),
+    );
+    const btns = chips.querySelectorAll<HTMLButtonElement>('.tag-remove');
+    (btns[idx] ?? tagInput).focus();
+  }
+
+  // Splits on commas; entries are validated by the notes domain. With
+  // final=false the text after the last comma stays in the input.
+  function commitTags(raw: string, final: boolean): void {
+    if (currentId === null) return;
+    const parts = raw.split(',');
+    const remainder = final ? '' : (parts.pop() ?? '');
+    const valid: string[] = [];
+    let tooLong = false;
+    for (const part of parts) {
+      const tag = normaliseTag(part);
+      if (tag !== null) valid.push(tag);
+      else if (/\S/.test(part)) tooLong = true;
+    }
+    if (tooLong) {
+      msg.textContent = 'Tags can be up to 32 characters.';
+      return;
+    }
+    const current = tagsOf(currentId);
+    const fresh: string[] = [];
+    let duplicate = false;
+    for (const tag of valid) {
+      if ([...current, ...fresh].some((t) => sameTag(t, tag))) duplicate = true;
+      else fresh.push(tag);
+    }
+    if (fresh.length > 0) store.setTags(currentId, [...current, ...fresh]);
+    tagInput.value = remainder;
+    msg.textContent = duplicate ? 'Already tagged.' : '';
+  }
+
+  tagInput.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Enter') {
+      ev.preventDefault();
+      commitTags(tagInput.value, true);
+      return;
+    }
+    msg.textContent = '';
+    if (ev.key === 'Backspace' && tagInput.value === '' && currentId !== null) {
+      const tags = tagsOf(currentId);
+      if (tags.length > 0) store.setTags(currentId, tags.slice(0, -1));
+    }
+  });
+  tagInput.addEventListener('input', () => {
+    msg.textContent = '';
+    if (tagInput.value.includes(',')) commitTags(tagInput.value, false);
+  });
+  tagInput.addEventListener('blur', () => {
+    if (/\S/.test(tagInput.value)) commitTags(tagInput.value, true);
+  });
 
   function clearPending(): void {
     clearTimeout(timer);
@@ -135,6 +242,8 @@ export function mountEditor(root: HTMLElement, deps: EditorDeps): EditorHandle {
       if (pending && oldId !== null) store.update(oldId, textarea.value);
       clearPending();
       textarea.value = bodyOf(currentId);
+      tagInput.value = '';
+      msg.textContent = '';
       show();
     } else if (source === 'external' && !pending && currentId !== null) {
       const body = bodyOf(currentId);
@@ -148,6 +257,7 @@ export function mountEditor(root: HTMLElement, deps: EditorDeps): EditorHandle {
         show();
       }
     }
+    renderChips();
   });
 
   document.addEventListener('visibilitychange', () => {
