@@ -4,9 +4,9 @@ Every note carries a `tags` list of strings. `src/notes/tags.ts` holds the rules
 
 ## Normalising
 
-- `normaliseTag(raw)` trims the text and returns `null` for an empty tag, a tag containing a comma, or a tag longer than `MAX_TAG_LENGTH` (32) code points.
+- `normaliseTag(raw)` trims the text and returns `null` for an empty tag, a tag containing a comma, a tag containing a control character (`\p{Cc}`, which covers C0, DEL and C1, plus the U+2028 and U+2029 separators, so line breaks included), or a tag longer than `MAX_TAG_LENGTH` (32) code points.
 - `sameTag(a, b)` compares case-insensitively.
-- `normaliseTags(list)` drops invalid tags and case-insensitive duplicates, keeping the first spelling and the order.
+- `normaliseTags(list)` drops invalid tags (so a tag with a control character is dropped on load and on import while the note's other tags are kept) and case-insensitive duplicates, keeping the first spelling and the order.
 
 ## Store
 
@@ -17,4 +17,4 @@ Every note carries a `tags` list of strings. `src/notes/tags.ts` holds the rules
 
 ## Markdown export
 
-`noteMarkdown(note)` returns the body unchanged for a note without tags. With tags it prefixes a YAML front matter block: `tags:` followed by one `  - "tag"` line per tag, with `\` and `"` escaped, then `---`. `exportNote`, `exportAllNotes` and `buildNotesZip` all write through it.
+`noteMarkdown(note)` returns the body unchanged for a note without tags. With tags it prefixes a YAML front matter block: `tags:` followed by one `  - "tag"` line per tag, with `\` and `"` and every `\p{Cc}`, U+2028 and U+2029 character escaped as YAML double-quoted escapes (`\n`, `\r`, `\t`, `\u2028`, `\u2029`, and `\xNN` for other controls), so each tag stays on exactly one line, then `---`. `exportNote`, `exportAllNotes` and `buildNotesZip` all write through it.
