@@ -228,6 +228,8 @@ export function mountNoteList(
   let toastIds: string[] = [];
   let toastArchived = true;
   let toastTimer: ReturnType<typeof setTimeout> | undefined;
+  // The timer also pauses under the pointer, so Undo can't vanish mid-reach.
+  let hovered = false;
   function stopTimer(): void {
     if (toastTimer !== undefined) clearTimeout(toastTimer);
     toastTimer = undefined;
@@ -238,6 +240,7 @@ export function mountNoteList(
   }
   function hideToast(): void {
     stopTimer();
+    hovered = false;
     toast.hidden = true;
   }
   function showToast(ids: string[], archived: boolean): void {
@@ -251,7 +254,17 @@ export function mountNoteList(
   toast.addEventListener('focusin', stopTimer);
   toast.addEventListener('focusout', (e) => {
     const next = e.relatedTarget;
-    if (toast.hidden || (next instanceof Node && toast.contains(next))) return;
+    if (toast.hidden || hovered) return;
+    if (next instanceof Node && toast.contains(next)) return;
+    startTimer();
+  });
+  toast.addEventListener('mouseenter', () => {
+    hovered = true;
+    stopTimer();
+  });
+  toast.addEventListener('mouseleave', () => {
+    hovered = false;
+    if (toast.hidden || toast.contains(document.activeElement)) return;
     startTimer();
   });
   undo.addEventListener('click', () => {

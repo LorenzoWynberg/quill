@@ -1373,6 +1373,34 @@ describe('select mode', () => {
     expect(toggle().getAttribute('aria-pressed')).toBe('true');
   });
 
+  it('lets the tag filter clear itself on Esc before select mode exits', () => {
+    const { store, ids } = seed(['One', 'Two']);
+    store.setTags(ids.One, ['work']);
+    mountNoteList(root, store);
+    toggle().click();
+    const tag = root.querySelector<HTMLSelectElement>('.notes-tag-select')!;
+    tag.value = 'work';
+    tag.dispatchEvent(new Event('change', { bubbles: true }));
+    expect(rows()).toEqual(['One']);
+    const e = key(
+      root.querySelector<HTMLSelectElement>('.notes-tag-select')!,
+      'Escape',
+    );
+    expect(e.defaultPrevented).toBe(true);
+    expect(rows()).toEqual(['One', 'Two']);
+    expect(toggle().getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('stops answering Esc once unmounted', () => {
+    const { store } = seed(['One']);
+    const unmount = mountNoteList(root, store);
+    toggle().click();
+    unmount();
+    key(box('One'), 'Escape');
+    expect(toggle().getAttribute('aria-pressed')).toBe('true');
+    expect(boxes()).toHaveLength(1);
+  });
+
   it('New note exits select mode and lists the new note', () => {
     const { store } = seed(['One']);
     mountNoteList(root, store);
@@ -1583,6 +1611,50 @@ describe('select mode', () => {
       expect(vi.getTimerCount()).toBe(1);
       unmount();
       expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it('gives a second batch its own full 5000 ms', () => {
+      vi.useFakeTimers();
+      const { store } = seed(['One', 'Two']);
+      mountNoteList(root, store);
+      toggle().click();
+      box('One').click();
+      bulk().click();
+      vi.advanceTimersByTime(3000);
+      box('Two').click();
+      bulk().click();
+      vi.advanceTimersByTime(4999);
+      expect(toast().hidden).toBe(false);
+      vi.advanceTimersByTime(1);
+      expect(toast().hidden).toBe(true);
+    });
+
+    it('pauses while the pointer is over the toast', () => {
+      vi.useFakeTimers();
+      const { store } = seed(['One', 'Two']);
+      mountNoteList(root, store);
+      toggle().click();
+      box('One').click();
+      bulk().click();
+      toast().dispatchEvent(new MouseEvent('mouseenter'));
+      vi.advanceTimersByTime(8000);
+      expect(toast().hidden).toBe(false);
+      toast().dispatchEvent(new MouseEvent('mouseleave'));
+      vi.advanceTimersByTime(4999);
+      expect(toast().hidden).toBe(false);
+      vi.advanceTimersByTime(1);
+      expect(toast().hidden).toBe(true);
+      // Focus on Undo still holds the toast after the pointer leaves.
+      box('Two').click();
+      bulk().click();
+      toast().dispatchEvent(new MouseEvent('mouseenter'));
+      undo().focus();
+      toast().dispatchEvent(new MouseEvent('mouseleave'));
+      vi.advanceTimersByTime(8000);
+      expect(toast().hidden).toBe(false);
+      toggle().focus();
+      vi.advanceTimersByTime(5000);
+      expect(toast().hidden).toBe(true);
     });
 
     it('Undo inverts an archive batch in one call and focuses the view toggle', () => {
