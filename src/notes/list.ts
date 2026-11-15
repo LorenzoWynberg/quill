@@ -50,6 +50,8 @@ export function mountNoteList(
       notice.textContent = result.ok
         ? `Restore complete: added ${result.added}, updated ${result.updated}, unchanged ${result.unchanged}.`
         : RESULT_MESSAGES[result.reason];
+    } catch {
+      notice.textContent = RESULT_MESSAGES.invalid;
     } finally {
       input.value = '';
     }
