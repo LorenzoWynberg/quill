@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.5.0 - 2026-11-15
+
+### New
+
+#### Choose Light, Dark or System yourself
+
+You can now pick Quill's theme instead of always following your operating system. A new **Theme** control in the app header has three options: **Light**, **Dark** and **System**. Light and Dark keep Quill in that theme whatever your OS is set to. System, the default, follows your OS setting as Quill always has.
+
+#### Your choice is remembered
+
+Quill saves your pick in this browser, so a reload or a new visit opens in the theme you chose. The theme is applied before the page is drawn, so you won't see a flash of the wrong theme while the app loads. Choosing System clears the saved setting and hands control back to your OS. Changing the theme never touches your notes or their backups.
+
+### Changed
+
+#### A slim header above your notes
+
+Quill now has a header that runs across the full width of the app, above the notes list and the editor. It shows the Quill name and the theme control in small, muted text, so it stays quiet next to your writing. On narrow screens it sits above the stacked notes list and editor.
+
+The theme control is a standard set of radio buttons. You can reach it with Tab, switch options with the arrow keys and see the usual focus outline. Its text meets WCAG AA contrast in both the light and dark themes.
+
 ## 0.4.0 - 2026-11-15
 
 ### New
