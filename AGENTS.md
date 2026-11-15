@@ -16,3 +16,5 @@ Its documentation starts at [`.trinity/docs/index.md`](.trinity/docs/index.md), 
 ## Quill conventions
 
 The package rules live in [`.trinity/docs/index.md`](.trinity/docs/index.md#rules); read them there.
+
+Journey probes live in `probes/`: each drives one journey on a real Chromium against a running app (`CHROME=<chromium> node probes/<name>.mjs <app url> [screenshot dir]`).

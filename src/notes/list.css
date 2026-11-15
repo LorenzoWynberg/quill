@@ -302,3 +302,145 @@ nav {
   outline: 2px solid var(--foreground);
   outline-offset: 2px;
 }
+
+/* Select mode: toggle, row checkboxes, bulk action bar and the Undo toast. */
+
+.notes-view-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--spacing-2);
+  min-width: 0;
+  margin-bottom: var(--spacing-3);
+}
+
+.notes-view-row .notes-views {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin-bottom: 0;
+}
+
+.notes-select-toggle,
+.notes-bulk-button,
+.notes-toast-undo {
+  font: inherit;
+  cursor: pointer;
+  min-height: 2.75rem;
+  padding: var(--spacing-1) var(--spacing-3);
+  background: transparent;
+  color: var(--foreground);
+  border: 1px solid var(--foreground);
+  border-radius: var(--radius);
+}
+
+.notes-select-toggle {
+  flex: 0 0 auto;
+}
+
+.notes-select-toggle[aria-pressed='true'] {
+  background: var(--elevated);
+  border-color: var(--primary);
+  box-shadow: inset 0 0 0 1px var(--primary);
+}
+
+.notes-select-toggle:disabled,
+.notes-bulk-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.notes-bulk-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-2);
+  min-width: 0;
+  padding: var(--spacing-2);
+  margin-bottom: var(--spacing-2);
+  background: var(--elevated);
+  color: var(--foreground);
+  border-radius: var(--radius);
+  font-size: var(--text-sm);
+}
+
+.notes-bulk-count {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.notes-select {
+  flex: 0 0 auto;
+  align-self: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  margin: var(--spacing-2);
+  accent-color: var(--primary);
+  cursor: pointer;
+}
+
+.notes-select-label {
+  flex: 1;
+  min-width: 0;
+  padding: var(--spacing-2) var(--spacing-3);
+  color: var(--foreground);
+  border-left: 3px solid transparent;
+  border-radius: var(--radius);
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.notes-list li[aria-current='true'] .notes-select-label {
+  background: var(--elevated);
+  border-left-color: var(--primary);
+}
+
+.notes-toast {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-2);
+  min-width: 0;
+  padding: var(--spacing-2) var(--spacing-3);
+  margin-bottom: var(--spacing-2);
+  background: var(--elevated);
+  color: var(--foreground);
+  border-left: 3px solid var(--primary);
+  border-radius: var(--radius);
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+}
+
+.notes-toast-text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.notes-toast-undo {
+  border-color: var(--primary);
+}
+
+.notes-bulk-bar[hidden],
+.notes-toast[hidden] {
+  display: none;
+}
+
+.notes-select-toggle:focus-visible,
+.notes-select:focus-visible,
+.notes-bulk-button:focus-visible,
+.notes-toast-undo:focus-visible {
+  outline: 2px solid var(--foreground);
+  outline-offset: 2px;
+}
+
+@media (max-width: 720px) {
+  .notes-bulk-count,
+  .notes-toast-text {
+    flex-basis: 100%;
+  }
+
+  .notes-bulk-button,
+  .notes-toast-undo {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+}
