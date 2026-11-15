@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.1.0 - 2026-11-15
+
+### New: archive notes
+
+You can now archive a note to get it out of your main list without deleting it. Every row in the note list has an **Archive** control, and a new **Archived** view next to **Notes** shows everything you've put away. In the Archived view, **Restore** puts a note back in your main list. Search and the tag filter work the same in both views, so you can find an archived note the same way you find any other.
+
+### Archived notes stay open for reading and editing
+
+Archiving a note doesn't lock it. When you open an archived note, the editor tells you it's archived and shows a **Restore** button right there. You can keep reading and editing it, and bring it back without going back to the list.
+
+### Archived notes are still your notes
+
+Archived notes are kept like any other note. They're included in backups, restores and exports, and if you have Quill open in more than one tab, archiving or restoring a note in one tab shows up in the others.
+
+### Accessibility
+
+Screen readers now announce when a note is archived or restored. Keyboard focus in the note list after you archive or restore a note works the same way it did before archiving was added.
+
 ## 1.0.0 - 2026-11-15
 
 ### New: tags for your notes
