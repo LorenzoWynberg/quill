@@ -9,19 +9,67 @@ const MESSAGES = {
 
 export interface NoteListOptions {
   beforeExport?: () => void;
+  beforeRestore?: () => void;
+}
+
+const RESULT_MESSAGES = {
+  invalid:
+    'Restore failed: this is not a valid Quill backup. Nothing was changed.',
+  write: 'Restore failed: notes could not be saved. Nothing was changed.',
+} as const;
+
+function backupName(): string {
+  const d = new Date();
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `quill-backup-${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}.json`;
 }
 
 export function mountNoteList(
   root: HTMLElement,
   store: NotesStore,
-  options?: NoteListOptions,
+  options: NoteListOptions = {},
 ): () => void {
   const alert = document.createElement('div');
   alert.setAttribute('role', 'alert');
   alert.className = 'notes-alert';
   alert.hidden = true;
+  const notice = document.createElement('div');
+  notice.setAttribute('role', 'status');
+  notice.className = 'notes-notice';
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'application/json,.json';
+  input.hidden = true;
+  input.addEventListener('change', async () => {
+    const file = input.files?.[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      options.beforeRestore?.();
+      const result = store.importBackup(text);
+      notice.textContent = result.ok
+        ? `Restore complete: added ${result.added}, updated ${result.updated}, unchanged ${result.unchanged}.`
+        : RESULT_MESSAGES[result.reason];
+    } finally {
+      input.value = '';
+    }
+  });
   const content = document.createElement('div');
-  root.replaceChildren(alert, content);
+  root.replaceChildren(alert, notice, input, content);
+
+  function backup(): void {
+    const blob = new Blob([store.exportBackup()], {
+      type: 'application/json',
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = backupName();
+    document.body.append(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
 
   function render(): void {
     const active = document.activeElement;
@@ -33,27 +81,35 @@ export function mountNoteList(
 
     const frag = document.createDocumentFragment();
 
-    const create = document.createElement('button');
-    create.type = 'button';
-    create.className = 'notes-new';
-    create.dataset.focus = 'new';
-    create.textContent = 'New note';
-    create.addEventListener('click', () => store.create());
-    const exportAll = document.createElement('button');
-    exportAll.type = 'button';
-    exportAll.className = 'notes-export';
-    exportAll.dataset.focus = 'export';
-    exportAll.textContent = 'Export all';
-    exportAll.setAttribute('aria-label', 'Export all notes as .zip');
-    exportAll.disabled = notes.length === 0;
-    exportAll.addEventListener('click', () => {
+    const actions = document.createElement('div');
+    actions.className = 'notes-actions';
+    const action = (
+      key: string,
+      label: string,
+      cls: string,
+      onClick: () => void,
+    ): HTMLButtonElement => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = cls;
+      b.dataset.focus = key;
+      b.textContent = label;
+      b.addEventListener('click', onClick);
+      return b;
+    };
+    const exportAll = action('export', 'Export all', 'notes-export', () => {
       options?.beforeExport?.();
       exportAllNotes(store.getState().notes);
     });
-    const header = document.createElement('div');
-    header.className = 'notes-header';
-    header.append(create, exportAll);
-    frag.append(header);
+    exportAll.setAttribute('aria-label', 'Export all notes as .zip');
+    exportAll.disabled = notes.length === 0;
+    actions.append(
+      action('new', 'New note', 'notes-new', () => store.create()),
+      exportAll,
+      action('backup', 'Backup', 'notes-secondary', backup),
+      action('restore', 'Restore', 'notes-secondary', () => input.click()),
+    );
+    frag.append(actions);
 
     const message = writeError ? MESSAGES[writeError] : '';
     if (alert.textContent !== message) alert.textContent = message;
