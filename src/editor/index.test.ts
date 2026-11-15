@@ -451,6 +451,21 @@ describe('tag chip field', () => {
     expect(input().value).toBe('pending');
   });
 
+  it.each(['mouseup', 'pointercancel'])(
+    'commits pending text on blur after a Remove press ends with %s and no click',
+    (type) => {
+      const n = store.create();
+      store.setTags(n.id, ['a']);
+      mount();
+      typeTag('pending');
+      const btn = root.querySelector('.tag-remove') as HTMLButtonElement;
+      btn.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+      document.dispatchEvent(new Event(type));
+      input().dispatchEvent(new Event('blur'));
+      expect(tagsOf(n.id)).toEqual(['a', 'pending']);
+    },
+  );
+
   it('keeps valid pasted parts and leaves the over-long one in the input', () => {
     const n = store.create();
     mount();
