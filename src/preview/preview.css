@@ -41,7 +41,7 @@
 
 .preview code,
 .preview pre {
-  font-family: var(--font-mono);
+  font-family: ui-monospace, monospace;
   font-size: var(--text-sm);
   background: var(--surface);
   border: 1px solid var(--border);
