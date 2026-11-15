@@ -1,4 +1,5 @@
 import { deriveTitle } from './title';
+import { matchesQuery } from './search';
 import { exportAllNotes } from './export';
 import type { ImportResult, NotesStore } from './store';
 
@@ -80,8 +81,53 @@ export function mountNoteList(
       input.value = '';
     }
   });
-  const content = document.createElement('div');
-  root.replaceChildren(alert, notice, input, content);
+  const actionsHost = document.createElement('div');
+  const listHost = document.createElement('div');
+  const statusHost = document.createElement('div');
+  statusHost.setAttribute('role', 'status');
+  let query = '';
+
+  const searchRegion = document.createElement('div');
+  searchRegion.className = 'notes-search';
+  const searchInput = document.createElement('input');
+  searchInput.type = 'search';
+  searchInput.className = 'notes-search-input';
+  searchInput.setAttribute('aria-label', 'Search notes');
+  searchInput.placeholder = 'Search notes';
+  const clearBtn = document.createElement('button');
+  clearBtn.type = 'button';
+  clearBtn.className = 'notes-search-clear';
+  clearBtn.textContent = 'Clear search';
+  clearBtn.hidden = true;
+  searchRegion.append(searchInput, clearBtn);
+  searchInput.addEventListener('input', () => {
+    query = searchInput.value;
+    render();
+  });
+  searchInput.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape' || query === '') return;
+    e.preventDefault();
+    clearQuery();
+    render();
+  });
+  clearBtn.addEventListener('click', () => {
+    clearQuery();
+    render();
+    searchInput.focus();
+  });
+  function clearQuery(): void {
+    query = '';
+    searchInput.value = '';
+  }
+  root.replaceChildren(
+    alert,
+    notice,
+    input,
+    actionsHost,
+    searchRegion,
+    statusHost,
+    listHost,
+  );
 
   function backup(): void {
     const blob = new Blob([store.exportBackup()], {
@@ -104,8 +150,6 @@ export function mountNoteList(
         ? active.dataset.focus
         : undefined;
     const { notes, selectedId, writeError } = store.getState();
-
-    const frag = document.createDocumentFragment();
 
     const actions = document.createElement('div');
     actions.className = 'notes-actions';
@@ -130,26 +174,40 @@ export function mountNoteList(
     exportAll.setAttribute('aria-label', 'Export all notes as .zip');
     exportAll.disabled = notes.length === 0;
     actions.append(
-      action('new', 'New note', 'notes-new', () => store.create()),
+      action('new', 'New note', 'notes-new', () => {
+        clearQuery();
+        store.create();
+      }),
       exportAll,
       action('backup', 'Backup', 'notes-secondary', backup),
       action('restore', 'Restore', 'notes-secondary', () => input.click()),
     );
-    frag.append(actions);
+    actionsHost.replaceChildren(actions);
 
     const message = writeError ? MESSAGES[writeError] : '';
     if (alert.textContent !== message) alert.textContent = message;
     alert.hidden = message === '';
+
+    if (notes.length === 0 && query !== '') clearQuery();
+    searchRegion.hidden = notes.length === 0;
+    clearBtn.hidden = query === '';
+    const visible = notes.filter((n) => matchesQuery(n.body, query));
+    const frag = document.createDocumentFragment();
 
     if (notes.length === 0) {
       const empty = document.createElement('p');
       empty.className = 'notes-empty';
       empty.textContent = 'No notes yet. Create one to get started.';
       frag.append(empty);
+    } else if (visible.length === 0) {
+      const none = document.createElement('p');
+      none.className = 'notes-no-match';
+      none.textContent = `No notes match "${query.trim()}"`;
+      statusHost.replaceChildren(none);
     } else {
       const ul = document.createElement('ul');
       ul.className = 'notes-list';
-      for (const note of notes) {
+      for (const note of visible) {
         const title = deriveTitle(note.body);
         const li = document.createElement('li');
         const open = document.createElement('button');
@@ -175,13 +233,16 @@ export function mountNoteList(
       frag.append(ul);
     }
 
-    content.replaceChildren(frag);
+    if (visible.length > 0 || notes.length === 0) statusHost.replaceChildren();
+    listHost.replaceChildren(frag);
     if (focusKey) {
-      const target = Array.from(
-        content.querySelectorAll<HTMLElement>('[data-focus]'),
-      ).find((el) => el.dataset.focus === focusKey);
+      const all = [
+        ...actionsHost.querySelectorAll<HTMLElement>('[data-focus]'),
+        ...listHost.querySelectorAll<HTMLElement>('[data-focus]'),
+      ];
       (
-        target ?? content.querySelector<HTMLElement>('[data-focus="new"]')
+        all.find((el) => el.dataset.focus === focusKey) ??
+        actionsHost.querySelector<HTMLElement>('[data-focus="new"]')
       )?.focus();
     }
   }

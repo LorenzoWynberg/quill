@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mountNoteList } from './list';
+import * as exportModule from './export';
 import { createNotesStore } from './store';
 
 function mem(): Storage {
@@ -303,6 +304,180 @@ describe('note list', () => {
         'Restore failed unexpectedly. Check your notes before trying again.',
       );
       expect(err).toHaveBeenCalled();
+    });
+  });
+
+  describe('search', () => {
+    const type = (value: string) => {
+      const i = root.querySelector<HTMLInputElement>('.notes-search-input')!;
+      i.value = value;
+      i.dispatchEvent(new Event('input'));
+      return i;
+    };
+    const titles = () =>
+      [...root.querySelectorAll('.notes-item')].map((b) => b.textContent);
+    const seed = () => {
+      const store = createNotesStore(mem());
+      for (const body of ['# Apple', '# Banana', 'misc\napple pie']) {
+        store.update(store.create().id, body);
+      }
+      return store;
+    };
+
+    it('has an accessible input between actions and the list', () => {
+      mountNoteList(root, seed());
+      const i = root.querySelector('.notes-search-input')!;
+      expect(i.getAttribute('aria-label')).toBe('Search notes');
+      expect(
+        root.querySelector('.notes-actions')!.compareDocumentPosition(i) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+      expect(
+        i.compareDocumentPosition(root.querySelector('.notes-list')!) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    });
+
+    it('filters by title or body, case-insensitively and trimmed', () => {
+      mountNoteList(root, seed());
+      type('  APPLE ');
+      expect(titles()).toHaveLength(2);
+      type('banana');
+      expect(titles()).toEqual(['Banana']);
+    });
+
+    it('keeps the input node, focus and filter across emits', () => {
+      const store = seed();
+      mountNoteList(root, store);
+      const i = type('apple');
+      i.focus();
+      store.update(store.getState().notes[0]!.id, '# Apple 2');
+      expect(root.querySelector('.notes-search-input')).toBe(i);
+      expect(document.activeElement).toBe(i);
+      expect(i.value).toBe('apple');
+      expect(titles()).toHaveLength(2);
+    });
+
+    it('keeps the input node, focus and filter across external emits', () => {
+      const storage = mem();
+      const store = createNotesStore(storage);
+      store.update(store.create().id, '# Apple');
+      mountNoteList(root, store);
+      const i = type('apple');
+      i.focus();
+      const note = (id: string, body: string) => ({
+        id,
+        body,
+        createdAt: 1,
+        updatedAt: 99,
+      });
+      storage.setItem(
+        'quill:v1',
+        JSON.stringify([note('a', 'Apple external'), note('b', 'Banana')]),
+      );
+      window.dispatchEvent(new StorageEvent('storage', { key: 'quill:v1' }));
+      expect(root.querySelector('.notes-search-input')).toBe(i);
+      expect(document.activeElement).toBe(i);
+      expect(i.value).toBe('apple');
+      expect(titles()).toEqual(['Apple external']);
+    });
+
+    it('drops a hidden query when the last note is deleted', () => {
+      const store = createNotesStore(mem());
+      store.update(store.create().id, '# Apple');
+      mountNoteList(root, store);
+      type('zzz');
+      store.remove(store.getState().notes[0]!.id);
+      expect(root.querySelector('.notes-no-match')).toBeNull();
+      expect(root.textContent).toContain('No notes yet');
+    });
+
+    it('Clear is hidden until a query exists, then restores the list', () => {
+      mountNoteList(root, seed());
+      const clear = root.querySelector<HTMLButtonElement>(
+        '.notes-search-clear',
+      )!;
+      expect(clear.hidden).toBe(true);
+      const i = type('banana');
+      expect(clear.hidden).toBe(false);
+      clear.click();
+      expect(i.value).toBe('');
+      expect(titles()).toHaveLength(3);
+      expect(document.activeElement).toBe(i);
+    });
+
+    it('Escape clears the query', () => {
+      mountNoteList(root, seed());
+      const i = type('banana');
+      i.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+      expect(i.value).toBe('');
+      expect(titles()).toHaveLength(3);
+    });
+
+    it('shows a status line on no match, not the first-run text', () => {
+      mountNoteList(root, seed());
+      type(' zzz ');
+      expect(root.querySelector('.notes-list')).toBeNull();
+      expect(root.querySelector('.notes-no-match')?.textContent).toBe(
+        'No notes match "zzz"',
+      );
+      expect(
+        root
+          .querySelector('.notes-no-match')
+          ?.parentElement?.getAttribute('role'),
+      ).toBe('status');
+      expect(root.textContent).not.toContain('No notes yet');
+    });
+
+    it('drops the no-match line when the query matches again, is cleared or escaped', () => {
+      mountNoteList(root, seed());
+      const noMatch = () => root.querySelector('.notes-no-match');
+      const i = type('zzz');
+      expect(noMatch()).not.toBeNull();
+      type('banana');
+      expect(noMatch()).toBeNull();
+      expect(titles().length).toBeGreaterThan(0);
+      type('zzz');
+      root.querySelector<HTMLButtonElement>('.notes-search-clear')!.click();
+      expect(noMatch()).toBeNull();
+      expect(titles()).toHaveLength(3);
+      type('zzz');
+      i.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+      expect(noMatch()).toBeNull();
+      expect(titles()).toHaveLength(3);
+    });
+
+    it('hides search with zero notes and keeps first-run text', () => {
+      mountNoteList(root, createNotesStore(mem()));
+      expect(root.querySelector<HTMLElement>('.notes-search')!.hidden).toBe(
+        true,
+      );
+      expect(root.textContent).toContain('No notes yet');
+      expect(root.querySelector('.notes-no-match')).toBeNull();
+    });
+
+    it('New note clears the query and selects the new note', () => {
+      const store = seed();
+      mountNoteList(root, store);
+      const i = type('banana');
+      root.querySelector<HTMLButtonElement>('.notes-new')!.click();
+      expect(i.value).toBe('');
+      expect(root.querySelector('[aria-current="true"]')?.textContent).toBe(
+        'Untitled',
+      );
+    });
+
+    it('filtering does not change the selection, and Export gets all notes', () => {
+      const store = seed();
+      const selected = store.getState().selectedId;
+      const spy = vi.spyOn(exportModule, 'exportAllNotes').mockReturnValue();
+      mountNoteList(root, store);
+      type('banana');
+      expect(store.getState().selectedId).toBe(selected);
+      const btn = root.querySelector<HTMLButtonElement>('.notes-export')!;
+      expect(btn.disabled).toBe(false);
+      btn.click();
+      expect(spy.mock.calls[0]![0]).toHaveLength(3);
     });
   });
 });
