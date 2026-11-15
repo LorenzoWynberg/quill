@@ -228,7 +228,21 @@ export function mountNoteList(
           if (window.confirm(`Delete "${title}"? This cannot be undone.`))
             store.remove(note.id);
         });
-        li.append(open, del);
+        const starred = note.starred === true;
+        const star = document.createElement('button');
+        star.type = 'button';
+        star.className = 'notes-star';
+        star.dataset.focus = `star:${note.id}`;
+        star.setAttribute('aria-pressed', String(starred));
+        star.setAttribute('aria-label', `Star "${title}"`);
+        const glyph = document.createElement('span');
+        glyph.setAttribute('aria-hidden', 'true');
+        glyph.textContent = starred ? '★' : '☆';
+        star.append(glyph);
+        star.addEventListener('click', () =>
+          store.setStarred(note.id, !starred),
+        );
+        li.append(star, open, del);
         ul.append(li);
       }
       frag.append(ul);

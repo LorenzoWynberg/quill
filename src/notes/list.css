@@ -8,6 +8,7 @@ nav {
 .notes-export,
 .notes-secondary,
 .notes-item,
+.notes-star,
 .notes-delete {
   font: inherit;
   cursor: pointer;
@@ -121,6 +122,20 @@ nav {
 .notes-item[aria-current='true'] {
   background: var(--elevated);
   border-left-color: var(--primary);
+}
+
+.notes-star {
+  background: transparent;
+  border: 0;
+  color: var(--primary);
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+  flex: 0 0 auto;
+}
+
+.notes-star:focus-visible {
+  outline: 2px solid var(--foreground);
+  outline-offset: 2px;
 }
 
 .notes-delete {

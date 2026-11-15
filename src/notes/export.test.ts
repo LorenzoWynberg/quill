@@ -109,3 +109,12 @@ describe('downloadBlob', () => {
     expect(document.querySelector('a[download]')).toBeNull();
   });
 });
+
+describe('starred notes', () => {
+  it('produce the same filename and zip as unstarred notes', () => {
+    const plain = { body: '# Hi', createdAt: 1, updatedAt: 2 };
+    const starred = { ...plain, starred: true };
+    expect(noteFilename(starred)).toBe(noteFilename(plain));
+    expect(buildNotesZip([starred])).toEqual(buildNotesZip([plain]));
+  });
+});
