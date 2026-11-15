@@ -171,6 +171,15 @@ describe('notes store', () => {
     expect(store.getState().selectedId).toBe('a');
   });
 
+  it('reloads when storage is cleared elsewhere (key null)', () => {
+    const s = new MemStorage();
+    seed(s, [n('a', 'A', 1)]);
+    const store = createNotesStore(s);
+    s.data.clear();
+    window.dispatchEvent(new StorageEvent('storage', { key: null }));
+    expect(store.getState().notes).toEqual([]);
+  });
+
   it('unsubscribe stops notifications', () => {
     const store = createNotesStore(new MemStorage());
     const fn = vi.fn();

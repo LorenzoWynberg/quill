@@ -12,7 +12,6 @@ export interface NotesState {
   notes: Note[];
   selectedId: string | null;
   writeError: WriteError;
-  pendingLocalEdits: boolean;
 }
 
 export interface NotesStore {
@@ -119,7 +118,6 @@ export function createNotesStore(
       notes: [...notes].sort((a, b) => b.updatedAt - a.updatedAt),
       selectedId,
       writeError,
-      pendingLocalEdits: pending,
     };
   }
 
@@ -153,7 +151,7 @@ export function createNotesStore(
 
   if (typeof window !== 'undefined' && storage) {
     window.addEventListener('storage', (event: StorageEvent) => {
-      if (event.key !== KEY) return;
+      if (event.key !== null && event.key !== KEY) return;
       if (event.storageArea && event.storageArea !== storage) return;
       const reloaded = readNotes();
       if (reloaded === 'unavailable') return;
