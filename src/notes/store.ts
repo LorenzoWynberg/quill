@@ -14,6 +14,10 @@ export interface NotesState {
   writeError: WriteError;
 }
 
+export type ImportResult =
+  | { ok: true; added: number; updated: number; unchanged: number }
+  | { ok: false; reason: 'invalid' | 'write' };
+
 export interface NotesStore {
   getState(): NotesState;
   subscribe(
@@ -24,6 +28,8 @@ export interface NotesStore {
   update(id: string, body: string): void;
   remove(id: string): void;
   setPendingLocalEdits(pending: boolean): void;
+  exportBackup(): string;
+  importBackup(text: string): ImportResult;
 }
 
 const KEY = 'quill:v1';
@@ -253,6 +259,92 @@ export function createNotesStore(
     },
     setPendingLocalEdits(value) {
       pending = value;
+    },
+    exportBackup() {
+      return JSON.stringify({
+        app: 'quill',
+        format: 1,
+        exportedAt: new Date().toISOString(),
+        notes: notes.map((n) => ({
+          id: n.id,
+          body: n.body,
+          createdAt: n.createdAt,
+          updatedAt: n.updatedAt,
+        })),
+      });
+    },
+    importBackup(text) {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(text);
+      } catch {
+        return { ok: false, reason: 'invalid' };
+      }
+      if (typeof parsed !== 'object' || parsed === null)
+        return { ok: false, reason: 'invalid' };
+      const env = parsed as Record<string, unknown>;
+      if (
+        env.app !== 'quill' ||
+        env.format !== 1 ||
+        !Array.isArray(env.notes) ||
+        !env.notes.every(isNote)
+      )
+        return { ok: false, reason: 'invalid' };
+
+      const incoming = new Map<string, Note>();
+      for (const n of env.notes as Note[]) {
+        const have = incoming.get(n.id);
+        if (!have || n.updatedAt > have.updatedAt) incoming.set(n.id, n);
+      }
+      const merged = new Map(notes.map((n) => [n.id, n]));
+      let added = 0;
+      let updated = 0;
+      let unchanged = 0;
+      for (const n of incoming.values()) {
+        const have = merged.get(n.id);
+        const copy: Note = {
+          id: n.id,
+          body: n.body,
+          createdAt: n.createdAt,
+          updatedAt: n.updatedAt,
+        };
+        if (!have) {
+          merged.set(n.id, copy);
+          added++;
+        } else if (n.updatedAt > have.updatedAt) {
+          merged.set(n.id, copy);
+          updated++;
+        } else unchanged++;
+      }
+      if (added + updated === 0) return { ok: true, added, updated, unchanged };
+
+      const next = [...merged.values()];
+      if (writesBlocked || !storage) {
+        writeError = 'unavailable';
+        emit('external');
+        return { ok: false, reason: 'write' };
+      }
+      try {
+        storage.setItem(KEY, JSON.stringify(next));
+      } catch (err) {
+        writeError = isQuota(err) ? 'quota' : 'unavailable';
+        emit('external');
+        return { ok: false, reason: 'write' };
+      }
+      notes = next;
+      const resolved = resolveSelected(selectedId);
+      if (resolved !== selectedId) {
+        selectedId = resolved;
+        try {
+          if (resolved === null) storage.removeItem(SELECTED_KEY);
+          else storage.setItem(SELECTED_KEY, resolved);
+        } catch {
+          // best effort: the notes are already saved
+        }
+      }
+      writeError = null;
+      emit('external');
+      return { ok: true, added, updated, unchanged };
     },
   };
 }

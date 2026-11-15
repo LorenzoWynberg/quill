@@ -19,4 +19,17 @@ The store listens for `storage` events on `quill:v1` (and a `null` key, which me
 
 ## List
 
-`mountNoteList(root, store)` renders a New note button, the alert, and one open and one Delete button per note. Delete asks `window.confirm` first. After each render, focus returns to the element with the same `data-focus` key, or to New note if it is gone. It returns an unsubscribe function.
+`mountNoteList(root, store, options?)` renders a New note, Backup and Restore button row, the alert, a `role="status"` notice, and one open and one Delete button per note. Delete asks `window.confirm` first. After each render, focus returns to the element with the same `data-focus` key, or to New note if it is gone. It returns an unsubscribe function.
+
+## Backup and restore
+
+`exportBackup()` returns JSON `{ app: 'quill', format: 1, exportedAt, notes }` with each note's `id`, `body`, `createdAt` and `updatedAt`. The Backup button downloads it as `quill-backup-YYYY-MM-DD.json`.
+
+`importBackup(text)` is a non-destructive merge and returns an `ImportResult`:
+
+- Text that is not JSON, or lacks `app: 'quill'`, `format: 1` or a `notes` array of valid notes, gives `{ ok: false, reason: 'invalid' }`.
+- Duplicate ids inside the file keep the newest `updatedAt`.
+- A note with an unknown id is added; a known id is replaced only when the file's `updatedAt` is strictly newer (equal keeps the local note); otherwise it counts as unchanged. Local notes absent from the file stay.
+- When nothing is added or updated, nothing is written. A failed write sets `writeError`, leaves notes unchanged and gives `{ ok: false, reason: 'write' }`. On success it emits `'external'`, reselects if the selected id no longer resolves, and returns `{ ok: true, added, updated, unchanged }`.
+
+The Restore button opens a hidden file input. Before importing, the list calls the `beforeRestore` option; `src/main.ts` passes the editor's `flush()` (returned by `mountEditor` as an `EditorHandle`) so a pending edit is saved first. The notice shows the counts, or a message for an invalid file, a write failure, an unreadable file, a failed flush (import aborted) or an unexpected error. The input is reset after every attempt.

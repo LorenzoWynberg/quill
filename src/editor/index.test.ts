@@ -310,4 +310,30 @@ describe('editor', () => {
         .disabled,
     ).toBe(true);
   });
+
+  it('returns a handle whose flush writes a pending edit now', () => {
+    const note = store.create();
+    const spy = vi.spyOn(store, 'update');
+    const handle = mountEditor(root, {
+      store,
+      render: renderMarkdown,
+      previewEl: preview,
+    });
+    type(root.querySelector('textarea') as HTMLTextAreaElement, 'quick');
+    handle.flush();
+    expect(spy).toHaveBeenCalledWith(note.id, 'quick');
+  });
+
+  it('shows the restored body when an import replaces the open note', () => {
+    const note = store.create();
+    store.update(note.id, 'old');
+    const ta = mount();
+    const text = JSON.stringify({
+      app: 'quill',
+      format: 1,
+      notes: [{ id: note.id, body: 'restored', createdAt: 1, updatedAt: 9e15 }],
+    });
+    expect(store.importBackup(text)).toMatchObject({ ok: true, updated: 1 });
+    expect(ta.value).toBe('restored');
+  });
 });

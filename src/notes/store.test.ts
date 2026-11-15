@@ -233,4 +233,133 @@ describe('notes store', () => {
     store.create();
     expect(fn).toHaveBeenCalledTimes(1);
   });
+
+  describe('backup', () => {
+    const file = (notes: unknown[], extra = {}) =>
+      JSON.stringify({ app: 'quill', format: 1, notes, ...extra });
+
+    it('exports the envelope with exactly four fields per note', () => {
+      const s = new MemStorage();
+      seed(s, [{ ...n('a', 'A', 1), extra: 1 }]);
+      const out = JSON.parse(createNotesStore(s).exportBackup());
+      expect(Object.keys(out).sort()).toEqual(
+        ['app', 'exportedAt', 'format', 'notes'].sort(),
+      );
+      expect(out.app).toBe('quill');
+      expect(out.format).toBe(1);
+      expect(new Date(out.exportedAt).toISOString()).toBe(out.exportedAt);
+      expect(out.notes).toEqual([n('a', 'A', 1)]);
+    });
+
+    it('round-trips into an empty store with one write', () => {
+      const src = new MemStorage();
+      seed(src, [n('a', 'A', 1), n('b', 'B', 2)]);
+      const text = createNotesStore(src).exportBackup();
+      const dst = new MemStorage();
+      const store = createNotesStore(dst);
+      const set = vi.spyOn(dst, 'setItem');
+      const fn = vi.fn();
+      store.subscribe(fn);
+      expect(store.importBackup(text)).toEqual({
+        ok: true,
+        added: 2,
+        updated: 0,
+        unchanged: 0,
+      });
+      expect(JSON.parse(dst.data.get('quill:v1') ?? '[]')).toEqual(
+        JSON.parse(text).notes,
+      );
+      expect(set.mock.calls.filter((c) => c[0] === 'quill:v1')).toHaveLength(1);
+      expect(fn).toHaveBeenCalledTimes(1);
+      expect(fn.mock.calls[0]?.[1]).toBe('external');
+      expect(store.getState().selectedId).toBe('b');
+    });
+
+    it('applies each merge rule and keeps selection', () => {
+      const s = new MemStorage();
+      seed(s, [
+        n('keep', 'local only', 5),
+        n('newer', 'old', 1),
+        n('tie', 'local', 3),
+        n('localNewer', 'local', 9),
+      ]);
+      const store = createNotesStore(s);
+      store.select('tie');
+      const res = store.importBackup(
+        file([
+          n('add', 'added', 2),
+          n('newer', 'fresh', 4),
+          n('tie', 'file', 3),
+          n('localNewer', 'file', 2),
+        ]),
+      );
+      expect(res).toEqual({ ok: true, added: 1, updated: 1, unchanged: 2 });
+      const by = new Map(store.getState().notes.map((x) => [x.id, x]));
+      expect(by.get('add')?.body).toBe('added');
+      expect(by.get('newer')).toMatchObject({ body: 'fresh', updatedAt: 4 });
+      expect(by.get('tie')?.body).toBe('local');
+      expect(by.get('localNewer')?.body).toBe('local');
+      expect(by.has('keep')).toBe(true);
+      expect(store.getState().selectedId).toBe('tie');
+    });
+
+    it('counts distinct ids when the file repeats one', () => {
+      const store = createNotesStore(new MemStorage());
+      const res = store.importBackup(
+        file([n('a', 'first', 2), n('a', 'second', 2), n('a', 'newer', 3)]),
+      );
+      expect(res).toEqual({ ok: true, added: 1, updated: 0, unchanged: 0 });
+      expect(store.getState().notes[0]?.body).toBe('newer');
+    });
+
+    it('does not write when nothing changes', () => {
+      const s = new MemStorage();
+      seed(s, [n('a', 'A', 5)]);
+      const store = createNotesStore(s);
+      const set = vi.spyOn(s, 'setItem');
+      expect(store.importBackup(file([n('a', 'X', 5)]))).toEqual({
+        ok: true,
+        added: 0,
+        updated: 0,
+        unchanged: 1,
+      });
+      expect(set).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['not json', 'nope{'],
+      ['wrong app', file([], { app: 'other' })],
+      ['wrong format', file([], { format: 2 })],
+      ['notes not array', file([], { notes: {} })],
+      ['one bad entry', file([n('a', 'A', 1), { id: 'b' }])],
+      ['null', 'null'],
+    ])('rejects invalid input (%s) without touching anything', (_l, text) => {
+      const s = new MemStorage();
+      seed(s, [n('z', 'Z', 1)]);
+      const store = createNotesStore(s);
+      const before = JSON.stringify([...s.data]);
+      const fn = vi.fn();
+      store.subscribe(fn);
+      expect(store.importBackup(text)).toEqual({
+        ok: false,
+        reason: 'invalid',
+      });
+      expect(JSON.stringify([...s.data])).toBe(before);
+      expect(fn).not.toHaveBeenCalled();
+    });
+
+    it('reports a write failure and keeps memory unchanged', () => {
+      const s = new MemStorage();
+      seed(s, [n('a', 'A', 1)]);
+      const store = createNotesStore(s);
+      const before = store.getState().notes;
+      s.failWith = quota();
+      expect(store.importBackup(file([n('b', 'B', 2)]))).toEqual({
+        ok: false,
+        reason: 'write',
+      });
+      expect(store.getState().notes).toEqual(before);
+      expect(store.getState().writeError).toBe('quota');
+    });
+  });
 });
