@@ -18,6 +18,8 @@ const RESULT_MESSAGES = {
   write: 'Restore failed: notes could not be saved. Nothing was changed.',
   unreadable:
     'Restore failed: the file could not be read. Nothing was changed.',
+  flush:
+    'Restore cancelled: your open note could not be saved first. Nothing was changed.',
   unexpected:
     'Restore failed unexpectedly. Check your notes before trying again.',
 } as const;
@@ -52,9 +54,15 @@ export function mountNoteList(
       let text: string;
       try {
         text = await file.text();
-        options.beforeRestore?.();
       } catch {
         notice.textContent = RESULT_MESSAGES.unreadable;
+        return;
+      }
+      try {
+        options.beforeRestore?.();
+      } catch (error) {
+        console.error('Restore aborted: pre-restore flush failed', error);
+        notice.textContent = RESULT_MESSAGES.flush;
         return;
       }
       let result: ImportResult;

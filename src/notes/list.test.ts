@@ -274,6 +274,23 @@ describe('note list', () => {
       expect(spy).not.toHaveBeenCalled();
     });
 
+    it('aborts and says so when beforeRestore throws', async () => {
+      const store = createNotesStore(mem());
+      const spy = vi.spyOn(store, 'importBackup');
+      const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+      mountNoteList(root, store, {
+        beforeRestore: () => {
+          throw new Error('flush');
+        },
+      });
+      await choose(backupFile([]));
+      expect(root.querySelector('[role="status"]')?.textContent).toBe(
+        'Restore cancelled: your open note could not be saved first. Nothing was changed.',
+      );
+      expect(spy).not.toHaveBeenCalled();
+      expect(err).toHaveBeenCalled();
+    });
+
     it('does not claim nothing changed when the store throws', async () => {
       const store = createNotesStore(mem());
       store.importBackup = () => {
