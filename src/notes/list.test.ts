@@ -144,6 +144,9 @@ describe('note list', () => {
     store.create();
     expect(btn().disabled).toBe(false);
     btn().focus();
+    const other = store.create();
+    store.update(other.id, 'changed elsewhere');
+    expect(document.activeElement).toBe(btn());
     btn().click();
     expect(order).toEqual(['before', 'download']);
     expect(names[0]).toMatch(/^quill-notes-\d{4}-\d{2}-\d{2}\.zip$/);

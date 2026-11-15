@@ -6,13 +6,11 @@ const MAX_BASE = 80;
 const ILLEGAL = '/\\:*?"<>|';
 
 export function noteFilename(note: Pick<Note, 'body'>): string {
-  const cleaned = Array.from(deriveTitle(note.body))
-    .filter((ch) => {
-      const code = ch.codePointAt(0) ?? 0;
-      return code > 0x1f && code !== 0x7f && !ILLEGAL.includes(ch);
-    })
-    .join('');
-  const base = cleaned.slice(0, MAX_BASE).trim();
+  const cleaned = Array.from(deriveTitle(note.body)).filter((ch) => {
+    const code = ch.codePointAt(0) ?? 0;
+    return code > 0x1f && code !== 0x7f && !ILLEGAL.includes(ch);
+  });
+  const base = cleaned.slice(0, MAX_BASE).join('').trim();
   return `${base === '' ? 'Untitled' : base}.md`;
 }
 

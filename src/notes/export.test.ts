@@ -27,6 +27,13 @@ describe('noteFilename', () => {
     );
     expect(noteFilename({ body: '' })).toBe('Untitled.md');
     expect(noteFilename({ body: '###' })).toBe('Untitled.md');
+    expect(noteFilename({ body: '# /\\:*?"<>|' })).toBe('Untitled.md');
+  });
+
+  it('never cuts an astral character in half', () => {
+    const name = noteFilename({ body: `${'a'.repeat(79)}😀tail` });
+    expect(name).toBe(`${'a'.repeat(79)}😀.md`);
+    expect(name).not.toMatch(/[\ud800-\udbff](?![\udc00-\udfff])/);
   });
 });
 
