@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.2.0 - 2026-11-15
+
+### New: tidy many notes at once
+
+You can now archive or restore a batch of notes in one action. Turn on **Select mode**, tick the notes you want, and archive them from the Notes view. To bring them back, select them in the Archived view and restore them together. **Select all** picks every note currently visible after search and tag filters, and Cancel or Esc leaves select mode.
+
+Selecting a long run of notes is quick. Tick one note, then shift-click another to select every note between them. You can also do it all from the keyboard: tab to a note and press **Shift+Space** to extend the selection, so you never need the mouse.
+
+### Undo after every batch
+
+After you archive or restore a batch, a short **Undo** toast appears for about five seconds (it waits while you're focused on it). Undo puts back exactly the notes that batch changed and leaves the rest of your notes alone. Screen readers announce each batch and each undo, so you don't need to see the screen to use it.
+
+### Improved: safer bulk changes
+
+Each batch archive or restore saves all the selected notes in one write, and so does each undo, so a batch never ends up half-applied.
+
 ## 1.1.0 - 2026-11-15
 
 ### New: archive notes
