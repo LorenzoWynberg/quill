@@ -121,6 +121,23 @@ describe('starred notes', () => {
 });
 
 describe('tags in markdown', () => {
+  it('escapes control characters so each tag stays on one line', () => {
+    const out = noteMarkdown({
+      body: 'B',
+      tags: ['a\nb\rc\td\u2028e\u2029f', 'g\u0000h\u007fi\u0085j'],
+    });
+    expect(out).toBe(
+      '---\ntags:\n  - "a\\nb\\rc\\td\\u2028e\\u2029f"\n  - "g\\x00h\\x7Fi\\x85j"\n---\nB',
+    );
+    expect(out.split('\n')).toHaveLength(6);
+  });
+
+  it('cannot forge a frontmatter delimiter through a tag', () => {
+    const out = noteMarkdown({ body: 'B', tags: ['x\n---\ny'] });
+    const lines = out.split('\n');
+    expect(lines.filter((l) => l === '---')).toHaveLength(2);
+  });
+
   it('writes YAML frontmatter with escaped tags', () => {
     expect(noteMarkdown({ body: '# Hi', tags: ['a', 'b"c\\d'] })).toBe(
       '---\ntags:\n  - "a"\n  - "b\\"c\\\\d"\n---\n# Hi',

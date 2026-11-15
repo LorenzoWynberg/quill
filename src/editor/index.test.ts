@@ -432,6 +432,84 @@ describe('tag chip field', () => {
     expect(msgText()).toBe('');
   });
 
+  it('removes a chip pressed while text is pending without losing the click', () => {
+    const n = store.create();
+    store.setTags(n.id, ['a', 'b']);
+    mount();
+    typeTag('pending');
+    const spy = vi.spyOn(store, 'setTags');
+    const btn = root.querySelector('.tag-remove') as HTMLButtonElement;
+    btn.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+    const md = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
+    btn.dispatchEvent(md);
+    expect(md.defaultPrevented).toBe(true);
+    input().dispatchEvent(new Event('blur'));
+    expect(btn.isConnected).toBe(true);
+    btn.click();
+    expect(tagsOf(n.id)).toEqual(['b']);
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(input().value).toBe('pending');
+  });
+
+  it.each(['mouseup', 'pointercancel'])(
+    'commits pending text on blur after a Remove press ends with %s and no click',
+    (type) => {
+      const n = store.create();
+      store.setTags(n.id, ['a']);
+      mount();
+      typeTag('pending');
+      const btn = root.querySelector('.tag-remove') as HTMLButtonElement;
+      btn.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+      document.dispatchEvent(new Event(type));
+      input().dispatchEvent(new Event('blur'));
+      expect(tagsOf(n.id)).toEqual(['a', 'pending']);
+    },
+  );
+
+  it('keeps valid pasted parts and leaves the over-long one in the input', () => {
+    const n = store.create();
+    mount();
+    const long = 'x'.repeat(40);
+    typeTag('a, b, ' + long);
+    expect(tagsOf(n.id)).toEqual(['a', 'b']);
+    expect(input().value).toBe(long);
+    expect(msgText()).toBe('Tags can be up to 32 characters.');
+    key('x');
+    expect(msgText()).toBe('');
+  });
+
+  describe.each(['quota', 'unavailable'] as const)(
+    'failed write (%s)',
+    (kind) => {
+      it('reverts the chip, keeps the text and announces, then clears', () => {
+        const n = store.create();
+        mount();
+        const orig = storage.setItem.bind(storage);
+        let fail = true;
+        vi.spyOn(storage, 'setItem').mockImplementation((k, v) => {
+          if (fail) {
+            throw kind === 'quota'
+              ? new DOMException('full', 'QuotaExceededError')
+              : new Error('no');
+          }
+          orig(k, v);
+        });
+        typeTag('work');
+        key('Enter');
+        expect(store.getState().writeError).toBe(kind);
+        expect(tagsOf(n.id)).toEqual([]);
+        expect(chipTexts()).toEqual([]);
+        expect(input().value).toBe('work');
+        expect(msgText()).toBe(
+          'Tag not saved: storage is unavailable or full.',
+        );
+        fail = false;
+        store.update(n.id, 'body');
+        expect(msgText()).toBe('');
+      });
+    },
+  );
+
   it('removes a chip and moves focus to the next Remove, else the input', () => {
     const n = store.create();
     store.setTags(n.id, ['a', 'b']);

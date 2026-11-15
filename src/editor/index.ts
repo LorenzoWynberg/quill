@@ -132,12 +132,18 @@ export function mountEditor(root: HTMLElement, deps: EditorDeps): EditorHandle {
       btn.className = 'tag-remove';
       btn.textContent = 'Remove';
       btn.setAttribute('aria-label', `Remove tag "${tag}"`);
-      btn.addEventListener('click', () => removeTag(tag));
+      btn.addEventListener('click', () => {
+        removePressed = false;
+        removeTag(tag);
+      });
       li.append(text, btn);
       return li;
     });
     chips.replaceChildren(...items);
   }
+
+  let tagSaveFailed = false;
+  let removePressed = false;
 
   function removeTag(tag: string): void {
     if (currentId === null) return;
@@ -152,29 +158,52 @@ export function mountEditor(root: HTMLElement, deps: EditorDeps): EditorHandle {
   }
 
   // Splits on commas; entries are validated by the notes domain. With
-  // final=false the text after the last comma stays in the input.
+  // final=false the text after the last comma stays in the input. Valid
+  // parts always commit; rejected parts stay in the input.
   function commitTags(raw: string, final: boolean): void {
     if (currentId === null) return;
     const parts = raw.split(',');
     const remainder = final ? '' : (parts.pop() ?? '');
     const valid: string[] = [];
-    let tooLong = false;
+    const rejected: string[] = [];
     for (const part of parts) {
       const tag = normaliseTag(part);
       if (tag !== null) valid.push(tag);
-      else if (/\S/.test(part)) tooLong = true;
-    }
-    if (tooLong) {
-      msg.textContent = 'Tags can be up to 32 characters.';
-      return;
+      else if (/\S/.test(part)) rejected.push(part.trim());
     }
     const current = tagsOf(currentId);
     const next = normaliseTags([...current, ...valid]);
     const duplicate = next.length < current.length + valid.length;
-    if (next.length > current.length) store.setTags(currentId, next);
-    tagInput.value = remainder;
-    msg.textContent = duplicate ? 'Already tagged.' : '';
+    if (next.length > current.length) {
+      store.setTags(currentId, next);
+      if (store.getState().writeError !== null) {
+        store.setTags(currentId, current);
+        tagInput.value = raw;
+        tagSaveFailed = true;
+        msg.textContent = 'Tag not saved: storage is unavailable or full.';
+        return;
+      }
+    }
+    tagInput.value = [...rejected, remainder].filter((x) => x !== '').join(',');
+    if (rejected.length > 0)
+      msg.textContent = 'Tags can be up to 32 characters.';
+    else msg.textContent = duplicate ? 'Already tagged.' : '';
   }
+
+  // Pressing Remove blurs the input; committing then would re-render the
+  // chips under the pointer and swallow the click.
+  const pressRemove = (ev: Event): void => {
+    if ((ev.target as Element).closest('.tag-remove')) removePressed = true;
+  };
+  chips.addEventListener('pointerdown', pressRemove);
+  chips.addEventListener('mousedown', (ev) => {
+    pressRemove(ev);
+    if ((ev.target as Element).closest('.tag-remove')) ev.preventDefault();
+  });
+  for (const type of ['pointerup', 'pointercancel', 'mouseup'])
+    document.addEventListener(type, () => {
+      removePressed = false;
+    });
 
   tagInput.addEventListener('keydown', (ev) => {
     if (ev.key === 'Enter') {
@@ -197,6 +226,7 @@ export function mountEditor(root: HTMLElement, deps: EditorDeps): EditorHandle {
     commitTags(tagInput.value, !typed);
   });
   tagInput.addEventListener('blur', () => {
+    if (removePressed) return;
     if (/\S/.test(tagInput.value)) commitTags(tagInput.value, true);
   });
 
@@ -244,6 +274,7 @@ export function mountEditor(root: HTMLElement, deps: EditorDeps): EditorHandle {
       textarea.value = bodyOf(currentId);
       tagInput.value = '';
       msg.textContent = '';
+      tagSaveFailed = false;
       show();
     } else if (source === 'external' && !pending && currentId !== null) {
       const body = bodyOf(currentId);
@@ -256,6 +287,10 @@ export function mountEditor(root: HTMLElement, deps: EditorDeps): EditorHandle {
         );
         show();
       }
+    }
+    if (tagSaveFailed && state.writeError === null) {
+      tagSaveFailed = false;
+      msg.textContent = '';
     }
     renderChips();
   });

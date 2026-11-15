@@ -41,6 +41,12 @@ const n = (id: string, body: string, updatedAt: number) => ({
 afterEach(() => vi.restoreAllMocks());
 
 describe('notes store', () => {
+  it('drops a stored tag with a line break on load', () => {
+    const s = new MemStorage();
+    seed(s, [{ ...n('a', 'A', 1), tags: ['ok', 'x\ny'] }]);
+    expect(createNotesStore(s).getState().notes[0]?.tags).toEqual(['ok']);
+  });
+
   it('writes one key holding exactly the five fields', () => {
     const s = new MemStorage();
     const store = createNotesStore(s);
@@ -312,6 +318,13 @@ describe('notes store', () => {
       expect(by.get('localNewer')?.body).toBe('local');
       expect(by.has('keep')).toBe(true);
       expect(store.getState().selectedId).toBe('tie');
+    });
+
+    it('drops a tag holding a line break but keeps the others', () => {
+      const store = createNotesStore(new MemStorage());
+      const note = { ...n('a', 'A', 2), tags: ['ok', 'x\ny'] };
+      expect(store.importBackup(file([note]))).toMatchObject({ added: 1 });
+      expect(store.getState().notes[0]?.tags).toEqual(['ok']);
     });
 
     it('counts distinct ids when the file repeats one', () => {

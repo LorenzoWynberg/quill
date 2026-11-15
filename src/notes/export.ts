@@ -4,14 +4,30 @@ import type { Note } from './store';
 
 const MAX_BASE = 80;
 
+const YAML_ESCAPES: Record<string, string> = {
+  '\\': '\\\\',
+  '"': '\\"',
+  '\n': '\\n',
+  '\r': '\\r',
+  '\t': '\\t',
+  '\u2028': '\\u2028',
+  '\u2029': '\\u2029',
+};
+
+function escapeYamlTag(t: string): string {
+  return t.replace(/[\\"\p{Cc}\u2028\u2029]/gu, (ch) => {
+    const known = YAML_ESCAPES[ch];
+    if (known !== undefined) return known;
+    return `\\x${(ch.codePointAt(0) ?? 0).toString(16).toUpperCase().padStart(2, '0')}`;
+  });
+}
+
 type Exportable = Pick<Note, 'body'> & { tags?: readonly string[] };
 
 export function noteMarkdown(note: Exportable): string {
   const tags = note.tags ?? [];
   if (tags.length === 0) return note.body;
-  const lines = tags.map(
-    (t) => `  - "${t.replace(/\\/gu, '\\\\').replace(/"/gu, '\\"')}"\n`,
-  );
+  const lines = tags.map((t) => `  - "${escapeYamlTag(t)}"\n`);
   return `---\ntags:\n${lines.join('')}---\n${note.body}`;
 }
 const ILLEGAL = '/\\:*?"<>|';
