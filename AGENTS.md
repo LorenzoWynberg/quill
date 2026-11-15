@@ -15,7 +15,4 @@ Its documentation starts at [`.trinity/docs/index.md`](.trinity/docs/index.md), 
 
 ## Quill conventions
 
-- Stack record: `package.json` and `pnpm-lock.yaml` are the record of the stack; read versions from them.
-- Design source: `DESIGN.md` is the design's source; `src/shared/theme.css` is its theme layer. Use `var(--role)` tokens, never literal colours.
-- Layering: the `notes`, `editor` and `preview` domains import only from `src/shared/`, never from each other. Only `src/main.ts` composes them.
-- Tests: a `*.test.ts` file sits beside the code it covers, in that code's domain folder.
+The package rules live in [`.trinity/docs/index.md`](.trinity/docs/index.md#rules); read them there.
