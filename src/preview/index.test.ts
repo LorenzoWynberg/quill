@@ -28,10 +28,14 @@ describe('renderMarkdown', () => {
   it.each([
     '[x](javascript:alert(1))',
     '[x](vbscript:x)',
+    '[x](JaVaScRiPt:alert(1))',
     '[x](data:text/html;base64,PHNjcmlwdD4=)',
+    '![x](javascript:alert(1))',
   ])('drops unsafe link %s', (src) => {
-    const a = dom(src).querySelector('a');
-    expect(a?.getAttribute('href') ?? '').not.toMatch(/script|data:/i);
+    const el = dom(src);
+    expect(el.querySelector('a')).toBeNull();
+    expect(el.querySelector('img')).toBeNull();
+    expect(el.textContent).toContain('[x]');
   });
 
   it('opens safe links in a new tab with rel', () => {
