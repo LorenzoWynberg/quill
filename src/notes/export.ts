@@ -10,7 +10,15 @@ export function noteFilename(note: Pick<Note, 'body'>): string {
     const code = ch.codePointAt(0) ?? 0;
     return code > 0x1f && code !== 0x7f && !ILLEGAL.includes(ch);
   });
-  const base = cleaned.slice(0, MAX_BASE).join('').trim();
+  const collapsed = cleaned
+    .join('')
+    .replace(/\s+/gu, ' ')
+    .trim()
+    .replace(/[.\s]+$/u, '');
+  const base = Array.from(collapsed)
+    .slice(0, MAX_BASE)
+    .join('')
+    .replace(/[.\s]+$/u, '');
   return `${base === '' ? 'Untitled' : base}.md`;
 }
 
