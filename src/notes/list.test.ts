@@ -78,12 +78,34 @@ describe('note list', () => {
     const storage = mem();
     const store = createNotesStore(storage);
     mountNoteList(root, store);
-    expect(root.querySelector('[role="alert"]')).toBeNull();
+    expect(root.querySelector('[role="alert"]')?.textContent).toBe('');
+    expect(root.querySelector<HTMLElement>('[role="alert"]')?.hidden).toBe(
+      true,
+    );
     vi.spyOn(storage, 'setItem').mockImplementation(() => {
       throw Object.assign(new Error('full'), { name: 'QuotaExceededError' });
     });
     store.create();
     expect(root.querySelector('[role="alert"]')?.textContent).toMatch(/full/i);
+    expect(root.querySelector<HTMLElement>('[role="alert"]')?.hidden).toBe(
+      false,
+    );
+  });
+
+  it('keeps one alert node and its text across updates while an error is set', () => {
+    const storage = mem();
+    const store = createNotesStore(storage);
+    mountNoteList(root, store);
+    vi.spyOn(storage, 'setItem').mockImplementation(() => {
+      throw Object.assign(new Error('full'), { name: 'QuotaExceededError' });
+    });
+    const note = store.create();
+    const alert = root.querySelector('[role="alert"]');
+    const text = alert?.textContent;
+    expect(text).toMatch(/full/i);
+    for (const body of ['a', 'ab', 'abc']) store.update(note.id, body);
+    expect(root.querySelector('[role="alert"]')).toBe(alert);
+    expect(alert?.textContent).toBe(text);
   });
 
   it('keeps focus on the same control across re-renders', () => {
