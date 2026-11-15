@@ -566,3 +566,74 @@ describe('tag chip field', () => {
     expect(css).not.toMatch(/#[0-9a-f]{3,8}\b|rgb\(|oklch\(/i);
   });
 });
+
+describe('archived notice', () => {
+  const notice = (): HTMLElement =>
+    root.querySelector('.editor-archived') as HTMLElement;
+  const restore = (): HTMLButtonElement =>
+    root.querySelector('.editor-restore') as HTMLButtonElement;
+
+  it('shows only for an open archived note and is a status region', () => {
+    mount();
+    expect(notice().getAttribute('role')).toBe('status');
+    expect(notice().hidden).toBe(true);
+    const n = store.create();
+    expect(notice().hidden).toBe(true);
+    store.setArchived(n.id, true);
+    store.select(n.id);
+    expect(notice().hidden).toBe(false);
+    expect(notice().textContent).toContain('This note is archived.');
+    expect(restore().getAttribute('aria-label')).toBe(
+      'Restore note from archive',
+    );
+  });
+
+  it('Restore unarchives, hides the notice and focuses the textarea', () => {
+    const n = store.create();
+    store.setArchived(n.id, true);
+    store.select(n.id);
+    const ta = mount();
+    const spy = vi.spyOn(store, 'setArchived');
+    restore().focus();
+    restore().click();
+    expect(spy).toHaveBeenCalledWith(n.id, false);
+    expect(notice().hidden).toBe(true);
+    expect(document.activeElement).toBe(ta);
+  });
+
+  it('follows an external archive and restore without touching the text', () => {
+    const n = store.create();
+    store.update(n.id, 'same');
+    const ta = mount();
+    const other = createNotesStore(storage);
+    other.setArchived(n.id, true);
+    window.dispatchEvent(new StorageEvent('storage', { key: 'quill:v1' }));
+    expect(notice().hidden).toBe(false);
+    expect(ta.value).toBe('same');
+    other.setArchived(n.id, false);
+    window.dispatchEvent(new StorageEvent('storage', { key: 'quill:v1' }));
+    expect(notice().hidden).toBe(true);
+    expect(ta.value).toBe('same');
+  });
+
+  it('keeps editing an archived note archived, and Restore keeps a pending edit', () => {
+    const n = store.create();
+    store.setArchived(n.id, true);
+    store.select(n.id);
+    const ta = mount();
+    type(ta, 'draft');
+    restore().click();
+    expect(ta.value).toBe('draft');
+    vi.advanceTimersByTime(300);
+    const saved = store.getState().notes.find((x) => x.id === n.id);
+    expect(saved?.body).toBe('draft');
+    expect(saved?.archivedAt).toBeUndefined();
+    store.setArchived(n.id, true);
+    store.select(n.id);
+    type(ta, 'more');
+    vi.advanceTimersByTime(300);
+    expect(
+      store.getState().notes.find((x) => x.id === n.id)?.archivedAt,
+    ).toBeDefined();
+  });
+});
