@@ -168,6 +168,19 @@ describe('editor', () => {
     expect(edit?.getAttribute('aria-pressed')).toBe('false');
   });
 
+  it('skip link switches to the edit pane and focuses the textarea', () => {
+    document.body.insertAdjacentHTML(
+      'afterbegin',
+      '<a class="skip-link" href="#editor">Skip</a>',
+    );
+    store.create();
+    const ta = mount();
+    main.dataset.pane = 'preview';
+    (document.querySelector('a.skip-link') as HTMLElement).click();
+    expect(main.dataset.pane).toBe('edit');
+    expect(document.activeElement).toBe(ta);
+  });
+
   it('imports only types from ../notes and nothing from ../preview', () => {
     const src = readFileSync('src/editor/index.ts', 'utf8');
     const imports = src.match(/^import .*$/gm) ?? [];

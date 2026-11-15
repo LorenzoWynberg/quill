@@ -27,6 +27,7 @@ export function mountEditor(root: HTMLElement, deps: EditorDeps): void {
   root.replaceChildren(empty, label, textarea);
 
   const main = root.parentElement;
+  let showEditPane = (): void => {};
   if (main) {
     const toggle = document.createElement('div');
     toggle.className = 'pane-toggle';
@@ -49,6 +50,10 @@ export function mountEditor(root: HTMLElement, deps: EditorDeps): void {
           String((main.dataset.pane ?? 'edit') === pane),
         );
       }
+    };
+    showEditPane = () => {
+      main.dataset.pane = 'edit';
+      sync();
     };
     toggle.append(...buttons.map((x) => x.b));
     main.prepend(toggle);
@@ -131,6 +136,7 @@ export function mountEditor(root: HTMLElement, deps: EditorDeps): void {
     .querySelector<HTMLAnchorElement>('a.skip-link')
     ?.addEventListener('click', (ev) => {
       ev.preventDefault();
+      showEditPane();
       if (textarea.hidden) root.focus();
       else textarea.focus();
     });

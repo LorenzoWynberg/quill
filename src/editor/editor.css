@@ -22,7 +22,7 @@
   font-size: var(--text-sm);
   background: var(--elevated);
   color: var(--foreground);
-  border: 1px solid var(--input);
+  border: 1px solid var(--muted);
   border-radius: var(--radius);
   padding: var(--spacing-3);
   resize: none;
