@@ -79,11 +79,13 @@ describe('note list', () => {
     const store = createNotesStore(storage);
     mountNoteList(root, store);
     expect(root.querySelector('[role="alert"]')?.textContent).toBe('');
+    expect(root.querySelector<HTMLElement>('[role="alert"]')?.hidden).toBe(true);
     vi.spyOn(storage, 'setItem').mockImplementation(() => {
       throw Object.assign(new Error('full'), { name: 'QuotaExceededError' });
     });
     store.create();
     expect(root.querySelector('[role="alert"]')?.textContent).toMatch(/full/i);
+    expect(root.querySelector<HTMLElement>('[role="alert"]')?.hidden).toBe(false);
   });
 
   it('keeps one alert node and its text across updates while an error is set', () => {
