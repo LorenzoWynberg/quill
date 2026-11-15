@@ -5,6 +5,7 @@ nav {
 }
 
 .notes-new,
+.notes-export,
 .notes-item,
 .notes-delete {
   font: inherit;
@@ -12,13 +13,35 @@ nav {
   border-radius: var(--radius);
 }
 
+.notes-header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-2);
+  margin-bottom: var(--spacing-3);
+}
+
+.notes-new,
+.notes-export {
+  flex: 1;
+  min-height: 2.75rem;
+  padding: var(--spacing-2) var(--spacing-3);
+}
+
 .notes-new {
-  width: 100%;
   background: var(--primary);
   color: var(--on-primary);
   border: 1px solid var(--primary);
-  padding: var(--spacing-2) var(--spacing-3);
-  margin-bottom: var(--spacing-3);
+}
+
+.notes-export {
+  background: transparent;
+  color: var(--foreground);
+  border: 1px solid var(--primary);
+}
+
+.notes-export:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
 }
 
 .notes-alert {

@@ -264,9 +264,50 @@ describe('editor', () => {
     expect(prev?.getAttribute('aria-pressed')).toBe('false');
   });
 
-  it('imports only types from ../notes and nothing from ../preview', () => {
+  it('imports only exportNote and types from ../notes, nothing from ../preview', () => {
     const src = readFileSync('src/editor/index.ts', 'utf8');
     const imports = src.match(/^import .*$/gm) ?? [];
-    expect(imports).toEqual(["import type { NotesStore } from '../notes';"]);
+    expect(imports).toEqual([
+      "import { exportNote } from '../notes';",
+      "import type { NotesStore } from '../notes';",
+    ]);
+  });
+
+  it('Export flushes the pending edit and downloads the typed text', async () => {
+    store.create();
+    let blob: Blob | undefined;
+    const order: string[] = [];
+    const realUpdate = store.update.bind(store);
+    vi.spyOn(store, 'update').mockImplementation((id, body) => {
+      order.push('update');
+      realUpdate(id, body);
+    });
+    vi.stubGlobal('URL', {
+      createObjectURL: (b: Blob) => {
+        order.push('download');
+        blob = b;
+        return 'blob:x';
+      },
+      revokeObjectURL: () => {},
+    });
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    const ta = mount();
+    const btn = root.querySelector('button.editor-export') as HTMLButtonElement;
+    expect(btn.disabled).toBe(false);
+    expect(btn.getAttribute('aria-label')).toBe('Export note as Markdown');
+    type(ta, '# typed');
+    vi.advanceTimersByTime(100);
+    btn.click();
+    expect(order).toEqual(['update', 'download']);
+    expect(await blob?.text()).toBe('# typed');
+    vi.unstubAllGlobals();
+  });
+
+  it('Export is disabled with no note', () => {
+    mount();
+    expect(
+      (root.querySelector('button.editor-export') as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
   });
 });
