@@ -117,4 +117,36 @@ describe('note list', () => {
     btn?.click();
     expect(document.activeElement?.className).toBe('notes-item');
   });
+
+  it('Export all is disabled with no notes, then flushes and downloads a zip', () => {
+    const store = createNotesStore(mem());
+    const before = vi.fn();
+    const names: string[] = [];
+    const order: string[] = [];
+    before.mockImplementation(() => order.push('before'));
+    vi.stubGlobal('URL', {
+      createObjectURL: () => {
+        order.push('download');
+        return 'blob:x';
+      },
+      revokeObjectURL: () => {},
+    });
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (
+      this: HTMLAnchorElement,
+    ) {
+      names.push(this.download);
+    });
+    mountNoteList(root, store, { beforeExport: before });
+    const btn = (): HTMLButtonElement =>
+      root.querySelector('.notes-export') as HTMLButtonElement;
+    expect(btn().disabled).toBe(true);
+    expect(btn().getAttribute('aria-label')).toBe('Export all notes as .zip');
+    store.create();
+    expect(btn().disabled).toBe(false);
+    btn().focus();
+    btn().click();
+    expect(order).toEqual(['before', 'download']);
+    expect(names[0]).toMatch(/^quill-notes-\d{4}-\d{2}-\d{2}\.zip$/);
+    expect(document.activeElement).toBe(btn());
+  });
 });
