@@ -225,6 +225,7 @@ describe('editor', () => {
     type(ta, 'x');
     window.dispatchEvent(new Event('beforeunload'));
     expect(upd).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
     vi.advanceTimersByTime(1000);
     expect(upd).toHaveBeenCalledTimes(1);
   });
@@ -241,11 +242,13 @@ describe('editor', () => {
     expect(preview.innerHTML).toBe(renderMarkdown('two-longer'));
     expect(ta.selectionStart).toBe(1);
     ta.setSelectionRange(8, 8);
+    const sel = vi.spyOn(ta, 'setSelectionRange');
     other.update(note.id, 'hi');
     window.dispatchEvent(new StorageEvent('storage', { key: 'quill:v1' }));
     expect(ta.value).toBe('hi');
     expect(ta.selectionStart).toBe(2);
     expect(ta.selectionEnd).toBe(2);
+    expect(sel).toHaveBeenCalledWith(2, 2);
   });
 
   it('returns to the edit pane when Edit is clicked after Preview', () => {
