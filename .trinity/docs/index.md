@@ -21,3 +21,4 @@ Quill is a browser notes app: write markdown, see it rendered, keep notes in loc
 - [Editor and autosave](tech-guide/editor/editor.md)
 - [Markdown preview](tech-guide/app/preview.md)
 - [Notes store and list](tech-guide/notes/store.md)
+- [Deploying to GitHub Pages](tech-guide/deploy/pages.md)
