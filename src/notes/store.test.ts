@@ -441,6 +441,19 @@ describe('notes store', () => {
       expect(note?.starred).toBe(true);
     });
 
+    it('moves a note starred in another tab to the front of this tab', () => {
+      const s = new MemStorage();
+      seed(s, [n('a', 'a', 10), n('b', 'b', 5)]);
+      const a = createNotesStore(s);
+      const b = createNotesStore(s);
+      a.setStarred('b', true);
+      window.dispatchEvent(new StorageEvent('storage', { key: 'quill:v1' }));
+      expect(b.getState().notes.map((x) => x.id)).toEqual(['b', 'a']);
+      a.setStarred('b', false);
+      window.dispatchEvent(new StorageEvent('storage', { key: 'quill:v1' }));
+      expect(b.getState().notes.map((x) => x.id)).toEqual(['a', 'b']);
+    });
+
     it('backup carries stars only when set, and restore applies newer-wins', () => {
       const s = new MemStorage();
       seed(s, [n('a', 'a', 10), n('b', 'b', 20)]);
