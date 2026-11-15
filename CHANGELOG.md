@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.4.0 - 2026-11-15
+
+### New
+
+#### Star the notes you care about
+
+You can now star a note to pin it to the top of your note list. Starred notes stay above the rest, so the notes you go back to most are always within reach, however many others you write.
+
+Stars persist. A starred note stays starred after you reload the page, shows up the same way in your other open Quill tabs, and is kept when you export or restore a JSON backup.
+
+Starring a note does not count as an edit. It leaves the note's content and last-edited time unchanged, so you can star and unstar notes freely without changing their edit history.
+
 ## 0.3.0 - 2026-11-15
 
 ### New
