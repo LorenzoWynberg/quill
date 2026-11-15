@@ -13,8 +13,7 @@ export interface NoteListOptions {
 }
 
 const RESULT_MESSAGES = {
-  invalid:
-    'Restore failed: this is not a valid Quill backup. Nothing was changed.',
+  invalid: 'That file is not a Quill backup.',
   write: 'Restore failed: notes could not be saved. Nothing was changed.',
   unreadable:
     'Restore failed: the file could not be read. Nothing was changed.',
