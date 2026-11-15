@@ -28,4 +28,6 @@ The store in `src/notes/store.ts` gives a note an optional `archivedAt` timestam
 - Each row has an `Archive` button (Notes view) or `Restore` button (Archived view), labelled `Archive "<title>"` / `Restore "<title>"`, beside `Delete`.
 - Search, the tag list and the tag filter are scoped to the showing view.
 - An empty Archived view reads `No archived notes.`; New note switches back to Notes.
-- After Archive or Restore, focus moves to the next row's same button, else the previous row's, else the view toggle.
+- After Archive or Restore, focus moves to the next row's same button, else the previous row's, else the view toggle. If the focus target no longer exists, focus falls back to the New note button.
+- A successful Archive or Restore sets a polite live region (`.notes-live`, screen-reader only) to `Archived "<title>". Archived (n).` or `Restored "<title>". Archived (n).`. A change that does not alter the note's archived state announces nothing and drops the pending focus target.
+- The editor holds its own polite live region (`.editor-archived-live`) that reads `This note is archived.` while the open note is archived and is cleared on restore. The visible notice keeps `role="status"`.
