@@ -429,6 +429,33 @@ describe('note list', () => {
       expect(root.textContent).not.toContain('No notes yet');
     });
 
+    it('announces the result count while a query is active', () => {
+      mountNoteList(root, seed());
+      const status = () =>
+        root.querySelector('.notes-search-status')?.textContent;
+      expect(status()).toBe('');
+      const i = type('banana');
+      expect(status()).toBe('1 note matches "banana"');
+      type('apple');
+      expect(status()).toBe('2 notes match "apple"');
+      i.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+      expect(status()).toBe('');
+      type('   ');
+      expect(status()).toBe('');
+    });
+
+    it('announces the trimmed query and recovers from a no-match line', () => {
+      mountNoteList(root, seed());
+      const status = () =>
+        root.querySelector('.notes-search-status')?.textContent;
+      type('  apple ');
+      expect(status()).toBe('2 notes match "apple"');
+      type('zzz');
+      expect(status()).toContain('No notes match "zzz"');
+      type('banana');
+      expect(status()).toBe('1 note matches "banana"');
+    });
+
     it('drops the no-match line when the query matches again, is cleared or escaped', () => {
       mountNoteList(root, seed());
       const noMatch = () => root.querySelector('.notes-no-match');
