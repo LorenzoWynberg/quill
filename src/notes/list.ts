@@ -10,6 +10,13 @@ export function mountNoteList(
   root: HTMLElement,
   store: NotesStore,
 ): () => void {
+  const alert = document.createElement('div');
+  alert.setAttribute('role', 'alert');
+  alert.className = 'notes-alert';
+  alert.hidden = true;
+  const content = document.createElement('div');
+  root.replaceChildren(alert, content);
+
   function render(): void {
     const active = document.activeElement;
     const focusKey =
@@ -28,13 +35,9 @@ export function mountNoteList(
     create.addEventListener('click', () => store.create());
     frag.append(create);
 
-    if (writeError) {
-      const alert = document.createElement('div');
-      alert.setAttribute('role', 'alert');
-      alert.className = 'notes-alert';
-      alert.textContent = MESSAGES[writeError];
-      frag.append(alert);
-    }
+    const message = writeError ? MESSAGES[writeError] : '';
+    if (alert.textContent !== message) alert.textContent = message;
+    alert.hidden = message === '';
 
     if (notes.length === 0) {
       const empty = document.createElement('p');
@@ -70,13 +73,13 @@ export function mountNoteList(
       frag.append(ul);
     }
 
-    root.replaceChildren(frag);
+    content.replaceChildren(frag);
     if (focusKey) {
       const target = Array.from(
-        root.querySelectorAll<HTMLElement>('[data-focus]'),
+        content.querySelectorAll<HTMLElement>('[data-focus]'),
       ).find((el) => el.dataset.focus === focusKey);
       (
-        target ?? root.querySelector<HTMLElement>('[data-focus="new"]')
+        target ?? content.querySelector<HTMLElement>('[data-focus="new"]')
       )?.focus();
     }
   }
