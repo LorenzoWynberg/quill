@@ -10,8 +10,9 @@
 
 ## Downloads
 
-- `exportNote(note)` downloads the body as `text/markdown;charset=utf-8`.
-- `exportAllNotes(notes)` does nothing for an empty list, otherwise downloads one `application/zip` of every note body.
+- `exportNote(note)` downloads `noteMarkdown(note)` as `text/markdown;charset=utf-8`.
+- `exportAllNotes(notes)` does nothing for an empty list, otherwise downloads one `application/zip` of every note's `noteMarkdown(note)`.
+- `noteMarkdown(note)` is the raw body for an untagged note, so its export is byte-identical to the body. A tagged note gets a YAML front matter prefix (see [tags.md](tags.md)). Filenames still come from the derived title, never from the front matter.
 - `downloadBlob` clicks a hidden anchor with an object URL, then revokes the URL.
 
 ## UI
