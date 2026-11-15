@@ -4,7 +4,7 @@
 
 ### Fixed
 
-**Exported notes now get clean, portable file names.** Before this fix, a note titled something like "Plan for May..." exported as `Plan  for  May....md`. Repeated spaces and the dots stacked in front of `.md` caused some filesystems and sync tools to reject or rename the file. Runs of whitespace in a title now collapse to a single space, and any dots or spaces just before the extension are removed, so the same note exports as `Plan for May.md`.
+**Exported notes now get clean, portable file names.** Before this fix, a note titled something like `Plan  for  May...` (two spaces between words) exported as `Plan  for  May....md`. Repeated spaces and the dots stacked in front of `.md` caused some filesystems and sync tools to reject or rename the file. Runs of whitespace in a title now collapse to a single space, and any dots or spaces just before the extension are removed, so the same note exports as `Plan for May.md`.
 
 The fix covers single-note export and the zip export of all your notes, so both produce the same names. Your notes are unchanged; only the names of the exported files differ. If you have scripts or folders that expect the old names, you may see slightly different names on your next export.
 
