@@ -19,7 +19,7 @@ The store listens for `storage` events on `quill:v1` (and a `null` key, which me
 
 ## List
 
-`mountNoteList(root, store, options?)` renders a New note, Backup and Restore button row, the alert, a `role="status"` notice, and one open and one Delete button per note. Delete asks `window.confirm` first. After each render, focus returns to the element with the same `data-focus` key, or to New note if it is gone. It returns an unsubscribe function.
+`mountNoteList(root, store, options?)` renders a New note, Backup and Restore button row, a search input and Clear search button (see [search.md](search.md)), the alert, a `role="status"` notice, a second `role="status"` region for search results, and one open and one Delete button per note. Delete asks `window.confirm` first. After each render, focus returns to the element with the same `data-focus` key, looked up in both the actions row and the list, or to New note if it is gone. It returns an unsubscribe function.
 
 ## Backup and restore
 

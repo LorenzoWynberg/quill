@@ -11,3 +11,4 @@ export {
   buildNotesZip,
   downloadBlob,
 } from './export';
+export { matchesQuery } from './search';
