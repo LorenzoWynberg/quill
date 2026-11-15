@@ -444,6 +444,18 @@ describe('note list', () => {
       expect(status()).toBe('');
     });
 
+    it('announces the trimmed query and recovers from a no-match line', () => {
+      mountNoteList(root, seed());
+      const status = () =>
+        root.querySelector('.notes-search-status')?.textContent;
+      type('  apple ');
+      expect(status()).toBe('2 notes match "apple"');
+      type('zzz');
+      expect(status()).toContain('No notes match "zzz"');
+      type('banana');
+      expect(status()).toBe('1 note matches "banana"');
+    });
+
     it('drops the no-match line when the query matches again, is cleared or escaped', () => {
       mountNoteList(root, seed());
       const noMatch = () => root.querySelector('.notes-no-match');

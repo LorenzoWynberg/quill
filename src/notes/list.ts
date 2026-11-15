@@ -236,7 +236,9 @@ export function mountNoteList(
 
     if (visible.length > 0 && query.trim() !== '') {
       const n = visible.length;
-      statusHost.textContent = `${n} ${n === 1 ? 'note matches' : 'notes match'} "${query.trim()}"`;
+      const msg = `${n} ${n === 1 ? 'note matches' : 'notes match'} "${query.trim()}"`;
+      // Skip an identical rewrite so screen readers don't re-announce it.
+      if (statusHost.textContent !== msg) statusHost.textContent = msg;
     } else if (visible.length > 0 || notes.length === 0) {
       statusHost.replaceChildren();
     }
