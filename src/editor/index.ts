@@ -92,7 +92,7 @@ export function mountEditor(root: HTMLElement, deps: EditorDeps): void {
     clearTimeout(timer);
     timer = undefined;
     store.update(id, textarea.value);
-    clearPending();
+    if (store.getState().writeError === null) clearPending();
   }
 
   textarea.addEventListener('input', () => {

@@ -131,6 +131,50 @@ describe('notes store', () => {
     expect(state.writeError).toBe('unavailable');
   });
 
+  const backups = (s: MemStorage) =>
+    [...s.data.entries()].filter(([k]) => k.startsWith('quill:v1:backup:'));
+
+  it('backs up truncated JSON before the first write', () => {
+    const s = new MemStorage();
+    s.data.set('quill:v1', '[{"id":"a"');
+    createNotesStore(s).create();
+    expect(backups(s).map(([, v]) => v)).toEqual(['[{"id":"a"']);
+  });
+
+  it('keeps valid notes and backs up the raw original when some are invalid', () => {
+    const s = new MemStorage();
+    const raw = JSON.stringify([
+      n('a', 'A', 1),
+      { ...n('b', 'B', 2), updatedAt: 'x' },
+    ]);
+    s.data.set('quill:v1', raw);
+    const store = createNotesStore(s);
+    store.create();
+    expect(store.getState().notes.map((x) => x.id)).toContain('a');
+    expect(backups(s).map(([, v]) => v)).toEqual([raw]);
+  });
+
+  it('withholds writes after a failed read, even once reads recover', () => {
+    const s = new MemStorage();
+    seed(s, [n('a', 'A', 1)]);
+    const before = s.data.get('quill:v1');
+    s.failGet = true;
+    const store = createNotesStore(s);
+    s.failGet = false;
+    store.create();
+    expect(s.data.get('quill:v1')).toBe(before);
+    expect(store.getState().writeError).toBe('unavailable');
+  });
+
+  it('does not reset notes on an unparseable storage event', () => {
+    const s = new MemStorage();
+    seed(s, [n('a', 'A', 1)]);
+    const store = createNotesStore(s);
+    s.data.set('quill:v1', '{broken');
+    window.dispatchEvent(new StorageEvent('storage', { key: 'quill:v1' }));
+    expect(store.getState().notes.map((x) => x.id)).toEqual(['a']);
+  });
+
   it('syncs external changes and ignores the selected key', () => {
     const s = new MemStorage();
     seed(s, [n('a', 'A', 1)]);
