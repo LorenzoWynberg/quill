@@ -1,5 +1,7 @@
 import { exportNote } from '../notes';
 import type { NotesStore } from '../notes';
+import { markdownToPlainText } from '../preview';
+import { countCharacters, countWords, formatCount } from './count';
 
 export interface EditorDeps {
   store: NotesStore;
@@ -29,6 +31,12 @@ export function mountEditor(root: HTMLElement, deps: EditorDeps): EditorHandle {
   textarea.id = 'editor-input';
   textarea.className = 'editor-textarea';
 
+  textarea.setAttribute('aria-describedby', 'editor-count');
+
+  const counter = document.createElement('p');
+  counter.className = 'editor-count';
+  counter.id = 'editor-count';
+
   const header = document.createElement('div');
   header.className = 'editor-header';
   const exportBtn = document.createElement('button');
@@ -39,7 +47,7 @@ export function mountEditor(root: HTMLElement, deps: EditorDeps): EditorHandle {
   exportBtn.disabled = true;
   header.append(exportBtn);
 
-  root.replaceChildren(header, empty, label, textarea);
+  root.replaceChildren(header, empty, label, textarea, counter);
 
   const main = root.parentElement;
   let showEditPane = (): void => {};
@@ -84,6 +92,20 @@ export function mountEditor(root: HTMLElement, deps: EditorDeps): EditorHandle {
     return store.getState().notes.find((n) => n.id === id)?.body ?? '';
   }
 
+  function updateCount(): void {
+    if (currentId === null) {
+      counter.hidden = true;
+      counter.textContent = '';
+      return;
+    }
+    const v = textarea.value;
+    counter.hidden = false;
+    counter.textContent = formatCount(
+      countWords(markdownToPlainText(v)),
+      countCharacters(v),
+    );
+  }
+
   function show(): void {
     const has = currentId !== null;
     empty.hidden = has;
@@ -91,6 +113,7 @@ export function mountEditor(root: HTMLElement, deps: EditorDeps): EditorHandle {
     label.hidden = !has;
     exportBtn.disabled = !has;
     previewEl.innerHTML = has ? render(textarea.value) : '';
+    updateCount();
   }
 
   function clearPending(): void {
@@ -120,6 +143,7 @@ export function mountEditor(root: HTMLElement, deps: EditorDeps): EditorHandle {
 
   textarea.addEventListener('input', () => {
     previewEl.innerHTML = render(textarea.value);
+    updateCount();
     if (!pending) {
       pending = true;
       store.setPendingLocalEdits(true);
