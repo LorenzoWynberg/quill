@@ -358,6 +358,40 @@ describe('note list', () => {
       expect(titles()).toHaveLength(2);
     });
 
+    it('keeps the input node, focus and filter across external emits', () => {
+      const storage = mem();
+      const store = createNotesStore(storage);
+      store.update(store.create().id, '# Apple');
+      mountNoteList(root, store);
+      const i = type('apple');
+      i.focus();
+      const note = (id: string, body: string) => ({
+        id,
+        body,
+        createdAt: 1,
+        updatedAt: 99,
+      });
+      storage.setItem(
+        'quill:v1',
+        JSON.stringify([note('a', 'Apple external'), note('b', 'Banana')]),
+      );
+      window.dispatchEvent(new StorageEvent('storage', { key: 'quill:v1' }));
+      expect(root.querySelector('.notes-search-input')).toBe(i);
+      expect(document.activeElement).toBe(i);
+      expect(i.value).toBe('apple');
+      expect(titles()).toEqual(['Apple external']);
+    });
+
+    it('drops a hidden query when the last note is deleted', () => {
+      const store = createNotesStore(mem());
+      store.update(store.create().id, '# Apple');
+      mountNoteList(root, store);
+      type('zzz');
+      store.remove(store.getState().notes[0]!.id);
+      expect(root.querySelector('.notes-no-match')).toBeNull();
+      expect(root.textContent).toContain('No notes yet');
+    });
+
     it('Clear is hidden until a query exists, then restores the list', () => {
       mountNoteList(root, seed());
       const clear = root.querySelector<HTMLButtonElement>(

@@ -83,6 +83,8 @@ export function mountNoteList(
   });
   const actionsHost = document.createElement('div');
   const listHost = document.createElement('div');
+  const statusHost = document.createElement('div');
+  statusHost.setAttribute('role', 'status');
   let query = '';
 
   const searchRegion = document.createElement('div');
@@ -123,6 +125,7 @@ export function mountNoteList(
     input,
     actionsHost,
     searchRegion,
+    statusHost,
     listHost,
   );
 
@@ -185,6 +188,7 @@ export function mountNoteList(
     if (alert.textContent !== message) alert.textContent = message;
     alert.hidden = message === '';
 
+    if (notes.length === 0 && query !== '') clearQuery();
     searchRegion.hidden = notes.length === 0;
     clearBtn.hidden = query === '';
     const visible = notes.filter((n) => matchesQuery(n.body, query));
@@ -196,13 +200,10 @@ export function mountNoteList(
       empty.textContent = 'No notes yet. Create one to get started.';
       frag.append(empty);
     } else if (visible.length === 0) {
-      const status = document.createElement('div');
-      status.setAttribute('role', 'status');
       const none = document.createElement('p');
       none.className = 'notes-no-match';
       none.textContent = `No notes match "${query.trim()}"`;
-      status.append(none);
-      frag.append(status);
+      statusHost.replaceChildren(none);
     } else {
       const ul = document.createElement('ul');
       ul.className = 'notes-list';
@@ -232,6 +233,7 @@ export function mountNoteList(
       frag.append(ul);
     }
 
+    if (visible.length > 0 || notes.length === 0) statusHost.replaceChildren();
     listHost.replaceChildren(frag);
     if (focusKey) {
       const all = [
