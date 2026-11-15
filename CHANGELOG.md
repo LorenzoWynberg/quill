@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.2.2 - 2026-11-15
+
+### Improved
+
+#### Clearer message when you restore the wrong file
+
+If you choose a file in **Restore** that isn't a Quill backup, Quill now says so in plain words: **That file is not a Quill backup.** The old "Restore failed:" wording is gone. Junk text, an HTML page, an empty file and JSON that isn't shaped like a backup all show this message.
+
+The behaviour is the same as before: a file like this changes nothing. Your notes, the note you have selected and what's saved in your browser stay exactly as they were. Pick the right backup file and try again.
+
+Other Restore messages keep their current wording. These are the success summary (`Restore complete: added N, updated N, unchanged N.`), the notice for when your notes can't be saved, and the notices for a file that can't be read or an open note that hasn't been saved yet.
+
 ## 0.2.1 - 2026-11-15
 
 ### Fixed

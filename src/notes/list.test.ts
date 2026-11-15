@@ -252,18 +252,29 @@ describe('note list', () => {
       expect(input.value).toBe('');
     });
 
-    it('reports an invalid file and changes nothing', async () => {
-      const store = createNotesStore(mem());
-      store.create();
-      const before = store.getState();
-      mountNoteList(root, store);
-      await choose(new File(['nope'], 'b.json'));
-      expect(root.querySelector('[role="status"]')?.textContent).toBe(
-        'Restore failed: this is not a valid Quill backup. Nothing was changed.',
-      );
-      expect(store.getState().notes).toEqual(before.notes);
-      expect(store.getState().selectedId).toBe(before.selectedId);
-    });
+    it.each(['nope', '<html></html>', '', '[]', '{"foo":1}'])(
+      'reports an invalid file (%j) and changes nothing',
+      async (text) => {
+        const storage = mem();
+        const store = createNotesStore(storage);
+        store.create();
+        const dump = () =>
+          Array.from({ length: storage.length }, (_, i) => {
+            const k = storage.key(i) as string;
+            return [k, storage.getItem(k)];
+          });
+        const before = store.getState();
+        const stored = dump();
+        mountNoteList(root, store);
+        await choose(new File([text], 'b.json'));
+        expect(root.querySelector('[role="status"]')?.textContent).toBe(
+          'That file is not a Quill backup.',
+        );
+        expect(store.getState().notes).toEqual(before.notes);
+        expect(store.getState().selectedId).toBe(before.selectedId);
+        expect(dump()).toEqual(stored);
+      },
+    );
 
     it('reports a write failure from the store', async () => {
       const store = createNotesStore(mem());
