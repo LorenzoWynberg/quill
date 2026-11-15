@@ -160,20 +160,23 @@ export function createNotesStore(
     }
   }
 
+  function backupDamaged(raw: string | null): void {
+    if (raw === null || !storage) return;
+    try {
+      storage.setItem(`${BACKUP_PREFIX}${Date.now()}`, raw);
+    } catch (err) {
+      writesBlocked = true;
+      writeError = isQuota(err) ? 'quota' : 'unavailable';
+    }
+  }
+
   const loaded = readNotes();
   if (loaded.status === 'unavailable') {
     writeError = 'unavailable';
     writesBlocked = Boolean(storage);
   } else {
     notes = loaded.notes;
-    if (loaded.damaged && loaded.raw !== null && storage) {
-      try {
-        storage.setItem(`${BACKUP_PREFIX}${Date.now()}`, loaded.raw);
-      } catch (err) {
-        writesBlocked = true;
-        writeError = isQuota(err) ? 'quota' : 'unavailable';
-      }
-    }
+    if (loaded.damaged) backupDamaged(loaded.raw);
   }
   selectedId = resolveSelected(readSelected());
 
@@ -185,6 +188,7 @@ export function createNotesStore(
       if (reloaded.status === 'unavailable') return;
       const open = notes.find((n) => n.id === selectedId);
       if (reloaded.damaged) {
+        backupDamaged(reloaded.raw);
         const byId = new Map(notes.map((n) => [n.id, n]));
         for (const n of reloaded.notes) {
           const have = byId.get(n.id);

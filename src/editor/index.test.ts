@@ -186,17 +186,22 @@ describe('editor', () => {
     const pend = vi.spyOn(store, 'setPendingLocalEdits');
     const ta = mount();
     type(ta, 'mine');
+    const realSet = storage.setItem.bind(storage);
     vi.spyOn(storage, 'setItem').mockImplementation(() => {
       throw Object.assign(new Error('full'), { name: 'QuotaExceededError' });
     });
+    pend.mockClear();
     vi.advanceTimersByTime(300);
     expect(store.getState().writeError).toBe('quota');
-    pend.mockClear();
-    storage.getItem('quill:v1');
+    expect(pend).not.toHaveBeenCalledWith(false);
+    realSet(
+      'quill:v1',
+      JSON.stringify([
+        { ...note, body: 'theirs', updatedAt: note.updatedAt + 5 },
+      ]),
+    );
     window.dispatchEvent(new StorageEvent('storage', { key: 'quill:v1' }));
     expect(ta.value).toBe('mine');
-    expect(pend).not.toHaveBeenCalledWith(false);
-    expect(note.id).toBeTruthy();
   });
 
   it('imports only types from ../notes and nothing from ../preview', () => {
