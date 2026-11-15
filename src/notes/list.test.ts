@@ -584,10 +584,35 @@ describe('note list', () => {
       const opts = [...select().options].map((o) => [o.value, o.textContent]);
       expect(opts).toHaveLength(3);
       expect(opts[0]).toEqual(['', 'All tags']);
-      expect(opts.slice(1).map((o) => o[0]?.toLowerCase())).toEqual([
-        'home',
-        'work',
-      ]);
+      expect(opts.slice(1).map((o) => o[1])).toEqual(['home', 'work']);
+    });
+
+    it('keeps the select on the canonical spelling when the first spelling goes away', () => {
+      const { store, b } = seed();
+      mountNoteList(root, store);
+      pick('work');
+      store.setTags(b.id, []);
+      expect(select().value).toBe('Work');
+      expect(items()).toEqual(['Alpha']);
+    });
+
+    it('lists starred notes first, each group by updatedAt descending', () => {
+      const { store, a, b } = seed();
+      store.setStarred(a.id, true);
+      mountNoteList(root, store);
+      pick([...select().options][2]!.value);
+      expect(items()).toEqual(['Alpha', 'Beta']);
+      store.setStarred(a.id, false);
+      store.setStarred(b.id, true);
+      expect(items()).toEqual(['Beta', 'Alpha']);
+    });
+
+    it('keeps focus on the select after a store change', () => {
+      const { store, c } = seed();
+      mountNoteList(root, store);
+      select().focus();
+      store.setTags(c.id, ['misc']);
+      expect(document.activeElement).toBe(select());
     });
 
     it('filters, composes with search, clears, and keeps focus', () => {
@@ -637,14 +662,26 @@ describe('note list', () => {
     });
 
     it('keeps selection, is not persisted, and New note clears it', () => {
-      const { store, c } = seed();
-      const setItem = vi.spyOn(Storage.prototype, 'setItem');
+      const storage = mem();
+      const store = createNotesStore(storage);
+      const a = store.create();
+      store.update(a.id, '# Alpha');
+      store.setTags(a.id, ['home']);
+      const c = store.create();
+      store.update(c.id, '# Gamma');
       store.select(c.id);
       mountNoteList(root, store);
+      const setItem = vi.spyOn(storage, 'setItem');
       pick('home');
       expect(store.getState().selectedId).toBe(c.id);
       expect(root.querySelector('[aria-current="true"]')).toBeNull();
       expect(setItem).not.toHaveBeenCalled();
+      const second = document.createElement('nav');
+      document.body.append(second);
+      mountNoteList(second, store);
+      expect(second.querySelector<HTMLSelectElement>('select')!.value).toBe('');
+      expect(second.querySelectorAll('li .notes-item')).toHaveLength(2);
+      second.remove();
       root.querySelector<HTMLButtonElement>('.notes-new')?.click();
       expect(select().value).toBe('');
       expect(items()).toContain('Untitled');

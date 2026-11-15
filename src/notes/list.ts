@@ -236,8 +236,8 @@ export function mountNoteList(
       for (const t of n.tags)
         if (!tags.some((x) => sameTag(x, t))) tags.push(t);
     tags.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
-    if (activeTag !== '' && !tags.some((t) => sameTag(t, activeTag)))
-      activeTag = '';
+    if (activeTag !== '')
+      activeTag = tags.find((t) => sameTag(t, activeTag)) ?? '';
     const allOpt = document.createElement('option');
     allOpt.value = '';
     allOpt.textContent = 'All tags';
