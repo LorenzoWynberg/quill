@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.0.0 - 2026-11-15
+
+### New: tags for your notes
+
+Notes can now carry tags. A chip field sits under the editor: type a tag and press Enter to add it, or remove one with the keyboard or the pointer. Tags live alongside the note, not inside it, so they never show up in your markdown text or the rendered preview. This chip field is the only place tags are added.
+
+Tags stay consistent wherever you add them. Capitalisation and stray spaces are cleaned up the same way every time, so the same tag isn't stored twice. Tags survive a page reload, appear in other open tabs, come back intact when you restore a JSON backup, and are written into the frontmatter of exported markdown files.
+
+### New: filter the note list by tag
+
+Pick a tag to narrow the note list to the notes that have it, then clear the filter in one step to see everything again. The tag filter works together with search, so you can search within a tag without leaving the list.
+
+### Fixed: tag entry and export edge cases
+
+The chip field now handles awkward input reliably. A click, a paste or a save that fails while you're adding a tag is no longer lost without warning. Tags with unusual characters, whether typed in or brought in from a backup, no longer break the frontmatter of an exported markdown file.
+
 ## 0.5.0 - 2026-11-15
 
 ### New
