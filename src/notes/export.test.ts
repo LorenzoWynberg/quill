@@ -157,3 +157,14 @@ describe('tags in markdown', () => {
     );
   });
 });
+
+describe('archived notes', () => {
+  it('export like any other note', () => {
+    const archived = { body: '# A', tags: [], archivedAt: 5 };
+    const files = unzipSync(
+      buildNotesZip([archived, { body: '# B', tags: [] }]),
+    );
+    expect(Object.keys(files)).toHaveLength(2);
+    expect(strFromU8(files['A.md']!)).toBe(noteMarkdown(archived));
+  });
+});

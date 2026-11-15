@@ -63,8 +63,43 @@
 
 .editor-header {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   justify-content: flex-end;
+  gap: var(--spacing-2);
   margin-bottom: var(--spacing-2);
+}
+
+.editor-archived {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-2);
+  color: var(--foreground);
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+}
+
+.editor-archived[hidden] {
+  display: none;
+}
+
+.editor-restore {
+  font: inherit;
+  cursor: pointer;
+  min-height: 2.75rem;
+  padding: var(--spacing-2) var(--spacing-3);
+  border: 1px solid var(--primary);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--foreground);
+}
+
+.editor-restore:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
 }
 
 .editor-export {
