@@ -1,9 +1,12 @@
+import { normaliseTags } from './tags';
+
 export interface Note {
   id: string;
   body: string;
   createdAt: number;
   updatedAt: number;
   starred?: boolean;
+  tags: string[];
 }
 
 export type WriteError = 'quota' | 'unavailable' | null;
@@ -29,6 +32,7 @@ export interface NotesStore {
   update(id: string, body: string): void;
   remove(id: string): void;
   setStarred(id: string, starred: boolean): void;
+  setTags(id: string, tags: readonly string[]): void;
   setPendingLocalEdits(pending: boolean): void;
   exportBackup(): string;
   importBackup(text: string): ImportResult;
@@ -50,11 +54,17 @@ function isNote(value: unknown): value is Note {
 }
 
 function normalise(n: Note): Note {
+  const rawTags: unknown = n.tags;
   const base: Note = {
     id: n.id,
     body: n.body,
     createdAt: n.createdAt,
     updatedAt: n.updatedAt,
+    tags: normaliseTags(
+      Array.isArray(rawTags)
+        ? rawTags.filter((t): t is string => typeof t === 'string')
+        : [],
+    ),
   };
   return n.starred === true ? { ...base, starred: true } : base;
 }
@@ -228,7 +238,11 @@ export function createNotesStore(
         if (pending && open) {
           const theirs = reloaded.notes.find((n) => n.id === open.id);
           const merged = theirs
-            ? normalise({ ...open, starred: theirs.starred })
+            ? normalise({
+                ...open,
+                starred: theirs.starred,
+                tags: theirs.tags,
+              })
             : open;
           notes = [...next, merged];
         } else notes = reloaded.notes;
@@ -250,7 +264,13 @@ export function createNotesStore(
       const now = Date.now();
       const latest = notes.reduce((m, n) => Math.max(m, n.updatedAt), 0);
       const t = Math.max(now, latest + 1);
-      const note: Note = { id: newId(), body: '', createdAt: t, updatedAt: t };
+      const note: Note = {
+        id: newId(),
+        body: '',
+        createdAt: t,
+        updatedAt: t,
+        tags: [],
+      };
       notes = [...notes, note];
       selectedId = note.id;
       persist();
@@ -291,6 +311,22 @@ export function createNotesStore(
       persist();
       emit('local');
     },
+    setTags(id, tags) {
+      const current = notes.find((n) => n.id === id);
+      if (!current) return;
+      const next = normaliseTags(tags);
+      if (
+        next.length === current.tags.length &&
+        next.every((t, i) => t === current.tags[i])
+      )
+        return;
+      const t = Math.max(Date.now(), current.updatedAt + 1);
+      notes = notes.map((n) =>
+        n.id === id ? { ...n, tags: next, updatedAt: t } : n,
+      );
+      persist();
+      emit('local');
+    },
     setPendingLocalEdits(value) {
       pending = value;
     },
@@ -305,6 +341,7 @@ export function createNotesStore(
           createdAt: n.createdAt,
           updatedAt: n.updatedAt,
           ...(n.starred ? { starred: true } : {}),
+          tags: n.tags,
         })),
       });
     },

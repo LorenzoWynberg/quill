@@ -9,6 +9,8 @@ export {
   uniqueFilenames,
   zipFilename,
   buildNotesZip,
+  noteMarkdown,
   downloadBlob,
 } from './export';
 export { matchesQuery } from './search';
+export { MAX_TAG_LENGTH, normaliseTag, normaliseTags, sameTag } from './tags';

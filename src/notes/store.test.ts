@@ -41,7 +41,7 @@ const n = (id: string, body: string, updatedAt: number) => ({
 afterEach(() => vi.restoreAllMocks());
 
 describe('notes store', () => {
-  it('writes one key holding exactly the four fields', () => {
+  it('writes one key holding exactly the five fields', () => {
     const s = new MemStorage();
     const store = createNotesStore(s);
     const note = store.create();
@@ -51,6 +51,7 @@ describe('notes store', () => {
       'body',
       'createdAt',
       'id',
+      'tags',
       'updatedAt',
     ]);
     expect(stored[0].body).toBe('hi');
@@ -61,6 +62,7 @@ describe('notes store', () => {
       'createdAt',
       'id',
       'starred',
+      'tags',
       'updatedAt',
     ]);
   });
@@ -247,7 +249,7 @@ describe('notes store', () => {
     const file = (notes: unknown[], extra = {}) =>
       JSON.stringify({ app: 'quill', format: 1, notes, ...extra });
 
-    it('exports the envelope with exactly four fields per note', () => {
+    it('exports the envelope with exactly five fields per note', () => {
       const s = new MemStorage();
       seed(s, [{ ...n('a', 'A', 1), extra: 1 }]);
       const out = JSON.parse(createNotesStore(s).exportBackup());
@@ -257,7 +259,7 @@ describe('notes store', () => {
       expect(out.app).toBe('quill');
       expect(out.format).toBe(1);
       expect(new Date(out.exportedAt).toISOString()).toBe(out.exportedAt);
-      expect(out.notes).toEqual([n('a', 'A', 1)]);
+      expect(out.notes).toEqual([{ ...n('a', 'A', 1), tags: [] }]);
     });
 
     it('round-trips into an empty store with one write', () => {
@@ -476,6 +478,93 @@ describe('notes store', () => {
       fresh.importBackup(JSON.stringify(equal));
       expect(fresh.getState().notes.find((x) => x.id === 'a')?.starred).toBe(
         true,
+      );
+    });
+  });
+
+  describe('tags', () => {
+    it('create starts with no tags and migrates old notes', () => {
+      const s = new MemStorage();
+      seed(s, [{ ...n('a', 'A', 1), starred: true }]);
+      const store = createNotesStore(s);
+      expect(store.getState().notes[0]).toMatchObject({
+        starred: true,
+        tags: [],
+      });
+      expect(store.create().tags).toEqual([]);
+    });
+
+    it('drops malformed tags on load', () => {
+      const s = new MemStorage();
+      seed(s, [
+        { ...n('a', 'A', 1), tags: ['x', 3, ' X ', 'a,b', ''] },
+        { ...n('b', 'B', 2), tags: 'nope' },
+      ]);
+      const store = createNotesStore(s);
+      const byId = new Map(store.getState().notes.map((x) => [x.id, x]));
+      expect(byId.get('a')?.tags).toEqual(['x']);
+      expect(byId.get('b')?.tags).toEqual([]);
+    });
+
+    it('setTags normalises, persists and bumps updatedAt', () => {
+      const s = new MemStorage();
+      seed(s, [n('a', 'A', 5)]);
+      const store = createNotesStore(s);
+      store.setTags('a', [' Work ', 'work', 'home']);
+      const note = store.getState().notes[0];
+      expect(note?.tags).toEqual(['Work', 'home']);
+      expect(note?.updatedAt).toBeGreaterThan(5);
+      expect(JSON.parse(s.data.get('quill:v1') ?? '')[0].tags).toEqual([
+        'Work',
+        'home',
+      ]);
+    });
+
+    it('setTags is a no-op for a missing note or an equal list', () => {
+      const s = new MemStorage();
+      seed(s, [{ ...n('a', 'A', 5), tags: ['x', 'y'] }]);
+      const store = createNotesStore(s);
+      const seen: unknown[] = [];
+      store.subscribe((st) => seen.push(st));
+      store.setTags('zzz', ['q']);
+      store.setTags('a', ['x', 'y']);
+      expect(seen).toHaveLength(0);
+      expect(store.getState().notes[0]?.updatedAt).toBe(5);
+      store.setTags('a', ['y', 'x']);
+      expect(seen).toHaveLength(1);
+    });
+
+    it('cross-tab pending merge keeps local body and takes their tags', () => {
+      const s = new MemStorage();
+      seed(s, [n('a', 'A', 1)]);
+      const store = createNotesStore(s);
+      store.select('a');
+      store.update('a', 'local');
+      store.setPendingLocalEdits(true);
+      seed(s, [{ ...n('a', 'remote', 99), tags: ['theirs'] }]);
+      window.dispatchEvent(new StorageEvent('storage', { key: 'quill:v1' }));
+      const note = store.getState().notes[0];
+      expect(note?.body).toBe('local');
+      expect(note?.tags).toEqual(['theirs']);
+    });
+
+    it('round-trips through backup export and import', () => {
+      const s = new MemStorage();
+      seed(s, [{ ...n('a', 'A', 1), tags: ['x'] }]);
+      const text = createNotesStore(s).exportBackup();
+      expect(JSON.parse(text).notes[0].tags).toEqual(['x']);
+      const t = new MemStorage();
+      const other = createNotesStore(t);
+      expect(other.importBackup(text)).toMatchObject({ ok: true, added: 1 });
+      expect(other.getState().notes[0]?.tags).toEqual(['x']);
+      const legacy = JSON.stringify({
+        app: 'quill',
+        format: 1,
+        notes: [n('b', 'B', 2)],
+      });
+      other.importBackup(legacy);
+      expect(other.getState().notes.find((x) => x.id === 'b')?.tags).toEqual(
+        [],
       );
     });
   });
