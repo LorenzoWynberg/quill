@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { mountNoteList } from './list';
 import * as exportModule from './export';
 import { createNotesStore } from './store';
@@ -505,6 +506,45 @@ describe('note list', () => {
       expect(btn.disabled).toBe(false);
       btn.click();
       expect(spy.mock.calls[0]![0]).toHaveLength(3);
+    });
+  });
+
+  describe('star toggle', () => {
+    it('renders an accessible toggle, reorders on click and keeps focus', () => {
+      const storage = mem();
+      const store = createNotesStore(storage);
+      const a = store.create();
+      store.update(a.id, '# Alpha');
+      const b = store.create();
+      store.update(b.id, '# Beta');
+      mountNoteList(root, store);
+      const items = () =>
+        [...root.querySelectorAll('li .notes-item')].map((e) => e.textContent);
+      expect(items()).toEqual(['Beta', 'Alpha']);
+      const star =
+        root.querySelectorAll<HTMLButtonElement>('li .notes-star')[1]!;
+      expect(star.type).toBe('button');
+      expect(star.getAttribute('aria-pressed')).toBe('false');
+      expect(star.getAttribute('aria-label')).toBe('Star "Alpha"');
+      expect(star.querySelector('span')?.getAttribute('aria-hidden')).toBe(
+        'true',
+      );
+      expect(star.textContent).toBe('☆');
+      star.focus();
+      star.click();
+      expect(items()).toEqual(['Alpha', 'Beta']);
+      const now = root.querySelector<HTMLButtonElement>('li .notes-star')!;
+      expect(now.getAttribute('aria-pressed')).toBe('true');
+      expect(now.textContent).toBe('★');
+      expect(document.activeElement).toBe(now);
+      expect(store.getState().selectedId).toBe(b.id);
+    });
+
+    it('uses theme tokens only for the star rules', () => {
+      const css = readFileSync('src/notes/list.css', 'utf8');
+      const rules = css.match(/\.notes-star[^{]*\{[^}]*\}/g) ?? [];
+      expect(rules.join('')).toContain(':focus-visible');
+      expect(rules.join('')).not.toMatch(/#[0-9a-f]{3,6}\b|rgb|hsl|oklch/i);
     });
   });
 });

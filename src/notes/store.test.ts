@@ -54,6 +54,15 @@ describe('notes store', () => {
       'updatedAt',
     ]);
     expect(stored[0].body).toBe('hi');
+    store.setStarred(note.id, true);
+    const starred = JSON.parse(s.data.get('quill:v1') ?? '');
+    expect(Object.keys(starred[0]).sort()).toEqual([
+      'body',
+      'createdAt',
+      'id',
+      'starred',
+      'updatedAt',
+    ]);
   });
 
   it('sorts by updatedAt descending and update moves a note to the front', () => {
@@ -360,6 +369,101 @@ describe('notes store', () => {
       });
       expect(store.getState().notes).toEqual(before);
       expect(store.getState().writeError).toBe('quota');
+    });
+  });
+
+  describe('starring', () => {
+    it('sorts starred first, keeps updatedAt, persists, and unstar removes the key', () => {
+      const s = new MemStorage();
+      seed(s, [n('a', 'a', 10), n('b', 'b', 20), n('c', 'c', 30)]);
+      const store = createNotesStore(s);
+      const emits: string[] = [];
+      store.subscribe((_, src) => emits.push(src));
+      store.setStarred('a', true);
+      expect(emits).toEqual(['local']);
+      expect(store.getState().notes.map((x) => x.id)).toEqual(['a', 'c', 'b']);
+      expect(store.getState().notes[0]?.updatedAt).toBe(10);
+      const stored = JSON.parse(s.data.get('quill:v1') ?? '');
+      expect(stored.find((x: { id: string }) => x.id === 'a').starred).toBe(
+        true,
+      );
+      expect(createNotesStore(s).getState().notes[0]?.id).toBe('a');
+      store.setStarred('a', false);
+      expect(store.getState().notes.map((x) => x.id)).toEqual(['c', 'b', 'a']);
+      expect(s.data.get('quill:v1')).not.toContain('starred');
+    });
+
+    it('is a no-op for an unknown id or the same value, and reports quota', () => {
+      const s = new MemStorage();
+      seed(s, [n('a', 'a', 10)]);
+      const store = createNotesStore(s);
+      const spy = vi.spyOn(s, 'setItem');
+      store.setStarred('zzz', true);
+      store.setStarred('a', false);
+      expect(spy).not.toHaveBeenCalled();
+      s.failWith = quota();
+      store.setStarred('a', true);
+      expect(store.getState().writeError).toBe('quota');
+    });
+
+    it('loads a missing or non-boolean starred as unstarred without a backup', () => {
+      const s = new MemStorage();
+      seed(s, [{ ...n('a', 'a', 10), starred: 'yes' }, n('b', 'b', 5)]);
+      const store = createNotesStore(s);
+      expect(store.getState().notes.every((x) => x.starred !== true)).toBe(
+        true,
+      );
+      expect([...s.data.keys()].some((k) => k.includes('backup'))).toBe(false);
+      expect(store.getState().writeError).toBeNull();
+    });
+
+    it('update keeps the star', () => {
+      const s = new MemStorage();
+      seed(s, [{ ...n('a', 'a', 10), starred: true }]);
+      const store = createNotesStore(s);
+      store.update('a', 'new');
+      expect(store.getState().notes[0]?.starred).toBe(true);
+    });
+
+    it('takes the star from another tab but keeps local pending edits', () => {
+      const s = new MemStorage();
+      seed(s, [n('a', 'a', 10)]);
+      const store = createNotesStore(s);
+      store.setPendingLocalEdits(true);
+      store.update('a', 'local');
+      const theirs = JSON.parse(s.data.get('quill:v1') ?? '');
+      theirs[0].body = 'remote';
+      theirs[0].starred = true;
+      s.data.set('quill:v1', JSON.stringify(theirs));
+      window.dispatchEvent(new StorageEvent('storage', { key: 'quill:v1' }));
+      const note = store.getState().notes[0];
+      expect(note?.body).toBe('local');
+      expect(note?.starred).toBe(true);
+    });
+
+    it('backup carries stars only when set, and restore applies newer-wins', () => {
+      const s = new MemStorage();
+      seed(s, [n('a', 'a', 10), n('b', 'b', 20)]);
+      const store = createNotesStore(s);
+      const plain = JSON.parse(store.exportBackup());
+      expect(JSON.stringify(plain.notes)).not.toContain('starred');
+      store.setStarred('a', true);
+      const backup = store.exportBackup();
+      expect(JSON.parse(backup).notes[0].starred).toBe(true);
+      expect(JSON.parse(backup).notes[1]).not.toHaveProperty('starred');
+
+      const fresh = createNotesStore(new MemStorage());
+      fresh.importBackup(backup);
+      const a = fresh.getState().notes.find((x) => x.id === 'a');
+      expect(a?.starred).toBe(true);
+      expect(a?.updatedAt).toBe(10);
+
+      const equal = JSON.parse(backup);
+      equal.notes[0].starred = undefined;
+      fresh.importBackup(JSON.stringify(equal));
+      expect(fresh.getState().notes.find((x) => x.id === 'a')?.starred).toBe(
+        true,
+      );
     });
   });
 });

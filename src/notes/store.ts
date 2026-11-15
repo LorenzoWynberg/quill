@@ -3,6 +3,7 @@ export interface Note {
   body: string;
   createdAt: number;
   updatedAt: number;
+  starred?: boolean;
 }
 
 export type WriteError = 'quota' | 'unavailable' | null;
@@ -27,6 +28,7 @@ export interface NotesStore {
   select(id: string): void;
   update(id: string, body: string): void;
   remove(id: string): void;
+  setStarred(id: string, starred: boolean): void;
   setPendingLocalEdits(pending: boolean): void;
   exportBackup(): string;
   importBackup(text: string): ImportResult;
@@ -45,6 +47,16 @@ function isNote(value: unknown): value is Note {
     typeof v.createdAt === 'number' &&
     typeof v.updatedAt === 'number'
   );
+}
+
+function normalise(n: Note): Note {
+  const base: Note = {
+    id: n.id,
+    body: n.body,
+    createdAt: n.createdAt,
+    updatedAt: n.updatedAt,
+  };
+  return n.starred === true ? { ...base, starred: true } : base;
 }
 
 function isQuota(err: unknown): boolean {
@@ -108,7 +120,7 @@ export function createNotesStore(
       const valid = parsed.filter(isNote);
       return {
         status: 'ok',
-        notes: valid,
+        notes: valid.map(normalise),
         raw,
         damaged: valid.length !== parsed.length,
       };
@@ -139,7 +151,11 @@ export function createNotesStore(
 
   function getState(): NotesState {
     return {
-      notes: [...notes].sort((a, b) => b.updatedAt - a.updatedAt),
+      notes: [...notes].sort(
+        (a, b) =>
+          Number(b.starred === true) - Number(a.starred === true) ||
+          b.updatedAt - a.updatedAt,
+      ),
       selectedId,
       writeError,
     };
@@ -209,7 +225,13 @@ export function createNotesStore(
         const next = reloaded.notes.filter(
           (n) => !(pending && open && n.id === open.id),
         );
-        notes = pending && open ? [...next, open] : reloaded.notes;
+        if (pending && open) {
+          const theirs = reloaded.notes.find((n) => n.id === open.id);
+          const merged = theirs
+            ? normalise({ ...open, starred: theirs.starred })
+            : open;
+          notes = [...next, merged];
+        } else notes = reloaded.notes;
       }
       selectedId = resolveSelected(selectedId);
       emit('external');
@@ -257,6 +279,18 @@ export function createNotesStore(
       persist();
       emit('local');
     },
+    setStarred(id, starred) {
+      const current = notes.find((n) => n.id === id);
+      if (!current || (current.starred === true) === starred) return;
+      notes = notes.map((n) => {
+        if (n.id !== id) return n;
+        const { starred: _drop, ...rest } = n;
+        void _drop;
+        return starred ? { ...rest, starred: true } : rest;
+      });
+      persist();
+      emit('local');
+    },
     setPendingLocalEdits(value) {
       pending = value;
     },
@@ -270,6 +304,7 @@ export function createNotesStore(
           body: n.body,
           createdAt: n.createdAt,
           updatedAt: n.updatedAt,
+          ...(n.starred ? { starred: true } : {}),
         })),
       });
     },
@@ -302,12 +337,7 @@ export function createNotesStore(
       let unchanged = 0;
       for (const n of incoming.values()) {
         const have = merged.get(n.id);
-        const copy: Note = {
-          id: n.id,
-          body: n.body,
-          createdAt: n.createdAt,
-          updatedAt: n.updatedAt,
-        };
+        const copy = normalise(n);
         if (!have) {
           merged.set(n.id, copy);
           added++;
