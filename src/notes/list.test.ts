@@ -793,6 +793,49 @@ describe('archived views', () => {
     );
   });
 
+  it('announces archive and restore in one persistent live region', () => {
+    const { store } = seed();
+    mountNoteList(root, store);
+    const live = root.querySelector('.notes-live') as HTMLElement;
+    expect(live.getAttribute('aria-live')).toBe('polite');
+    expect(live.getAttribute('role')).toBeNull();
+    root.querySelector<HTMLButtonElement>('.notes-archive')!.click();
+    expect(root.querySelector('.notes-live')).toBe(live);
+    expect(live.textContent).toMatch(/^Archived "\w+"\. Archived \(1\)\.$/);
+    btn('Archived (1)').click();
+    root.querySelector<HTMLButtonElement>('.notes-restore')!.click();
+    expect(live.textContent).toMatch(/^Restored "\w+"\. Archived \(0\)\.$/);
+  });
+
+  it('ignores a stale Archive click and leaves focus alone', () => {
+    const { store, a } = seed();
+    mountNoteList(root, store);
+    const stale = [
+      ...root.querySelectorAll<HTMLButtonElement>('.notes-archive'),
+    ].find((b) => b.dataset.focus === `archive:${a.id}`)!;
+    store.setArchived(a.id, true);
+    const live = root.querySelector('.notes-live') as HTMLElement;
+    live.textContent = '';
+    stale.click();
+    expect(live.textContent).toBe('');
+    const search = root.querySelector<HTMLInputElement>('.notes-search-input')!;
+    search.focus();
+    store.create();
+    expect(document.activeElement).toBe(search);
+  });
+
+  it('moves focus to New note when a deleted row vanishes', () => {
+    const store = createNotesStore(mem());
+    const n = store.create();
+    store.update(n.id, '# Only');
+    mountNoteList(root, store);
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const del = root.querySelector<HTMLButtonElement>('.notes-delete')!;
+    del.focus();
+    del.click();
+    expect((document.activeElement as HTMLElement).dataset.focus).toBe('new');
+  });
+
   it('keeps New note and Export all working from Archived', () => {
     const { store } = seed();
     store.setArchivedMany(
