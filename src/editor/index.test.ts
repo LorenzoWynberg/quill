@@ -204,6 +204,66 @@ describe('editor', () => {
     expect(ta.value).toBe('mine');
   });
 
+  it('does not flush on visibilitychange while visible', () => {
+    store.create();
+    const upd = vi.spyOn(store, 'update');
+    const pend = vi.spyOn(store, 'setPendingLocalEdits');
+    const ta = mount();
+    type(ta, 'x');
+    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+    document.dispatchEvent(new Event('visibilitychange'));
+    expect(upd).not.toHaveBeenCalled();
+    expect(pend).toHaveBeenLastCalledWith(true);
+    vi.advanceTimersByTime(300);
+    expect(upd).toHaveBeenCalledTimes(1);
+  });
+
+  it('cancels the debounce timer after a flush', () => {
+    store.create();
+    const upd = vi.spyOn(store, 'update');
+    const ta = mount();
+    type(ta, 'x');
+    window.dispatchEvent(new Event('beforeunload'));
+    expect(upd).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
+    vi.advanceTimersByTime(1000);
+    expect(upd).toHaveBeenCalledTimes(1);
+  });
+
+  it('updates preview and clamps the caret on an external change', () => {
+    const note = store.create();
+    store.update(note.id, 'one');
+    const ta = mount();
+    ta.setSelectionRange(1, 1);
+    const other = createNotesStore(storage);
+    other.update(note.id, 'two-longer');
+    window.dispatchEvent(new StorageEvent('storage', { key: 'quill:v1' }));
+    expect(ta.value).toBe('two-longer');
+    expect(preview.innerHTML).toBe(renderMarkdown('two-longer'));
+    expect(ta.selectionStart).toBe(1);
+    ta.setSelectionRange(8, 8);
+    const sel = vi.spyOn(ta, 'setSelectionRange');
+    other.update(note.id, 'hi');
+    window.dispatchEvent(new StorageEvent('storage', { key: 'quill:v1' }));
+    expect(ta.value).toBe('hi');
+    expect(ta.selectionStart).toBe(2);
+    expect(ta.selectionEnd).toBe(2);
+    expect(sel).toHaveBeenCalledWith(2, 2);
+  });
+
+  it('returns to the edit pane when Edit is clicked after Preview', () => {
+    mount();
+    const [edit, prev] = [
+      ...(main.querySelector('[role="group"]')?.querySelectorAll('button') ??
+        []),
+    ];
+    prev?.click();
+    edit?.click();
+    expect(main.dataset.pane).toBe('edit');
+    expect(edit?.getAttribute('aria-pressed')).toBe('true');
+    expect(prev?.getAttribute('aria-pressed')).toBe('false');
+  });
+
   it('imports only types from ../notes and nothing from ../preview', () => {
     const src = readFileSync('src/editor/index.ts', 'utf8');
     const imports = src.match(/^import .*$/gm) ?? [];
