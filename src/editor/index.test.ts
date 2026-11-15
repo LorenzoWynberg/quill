@@ -268,7 +268,7 @@ describe('editor', () => {
     const src = readFileSync('src/editor/index.ts', 'utf8');
     const imports = src.match(/^import .*$/gm) ?? [];
     expect(imports).toEqual([
-      "import { exportNote, normaliseTag, sameTag } from '../notes';",
+      "import { exportNote, normaliseTag, normaliseTags } from '../notes';",
       "import type { NotesStore } from '../notes';",
     ]);
   });
@@ -400,9 +400,9 @@ describe('tag chip field', () => {
     typeTag('home,');
     expect(tagsOf(n.id)).toEqual(['home']);
     expect(input().value).toBe('');
-    typeTag('a, b, c');
+    typeTag('a, b');
     expect(tagsOf(n.id)).toEqual(['home', 'a', 'b']);
-    expect(input().value).toBe(' c');
+    expect(input().value).toBe('');
   });
 
   it('rejects a duplicate and announces it', () => {

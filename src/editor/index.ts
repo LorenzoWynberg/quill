@@ -1,4 +1,4 @@
-import { exportNote, normaliseTag, sameTag } from '../notes';
+import { exportNote, normaliseTag, normaliseTags } from '../notes';
 import type { NotesStore } from '../notes';
 
 export interface EditorDeps {
@@ -169,13 +169,9 @@ export function mountEditor(root: HTMLElement, deps: EditorDeps): EditorHandle {
       return;
     }
     const current = tagsOf(currentId);
-    const fresh: string[] = [];
-    let duplicate = false;
-    for (const tag of valid) {
-      if ([...current, ...fresh].some((t) => sameTag(t, tag))) duplicate = true;
-      else fresh.push(tag);
-    }
-    if (fresh.length > 0) store.setTags(currentId, [...current, ...fresh]);
+    const next = normaliseTags([...current, ...valid]);
+    const duplicate = next.length < current.length + valid.length;
+    if (next.length > current.length) store.setTags(currentId, next);
     tagInput.value = remainder;
     msg.textContent = duplicate ? 'Already tagged.' : '';
   }
@@ -192,9 +188,13 @@ export function mountEditor(root: HTMLElement, deps: EditorDeps): EditorHandle {
       if (tags.length > 0) store.setTags(currentId, tags.slice(0, -1));
     }
   });
-  tagInput.addEventListener('input', () => {
+  tagInput.addEventListener('input', (ev) => {
     msg.textContent = '';
-    if (tagInput.value.includes(',')) commitTags(tagInput.value, false);
+    if (!tagInput.value.includes(',')) return;
+    // Typed commas keep the text after them in the input; a paste or other
+    // bulk insertion commits every part.
+    const typed = (ev as InputEvent).inputType === 'insertText';
+    commitTags(tagInput.value, !typed);
   });
   tagInput.addEventListener('blur', () => {
     if (/\S/.test(tagInput.value)) commitTags(tagInput.value, true);
