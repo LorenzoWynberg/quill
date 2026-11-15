@@ -5,6 +5,7 @@ import './notes/list.css';
 import './editor/editor.css';
 import { createNotesStore, mountNoteList } from './notes';
 import { mountEditor } from './editor';
+import type { EditorHandle } from './editor';
 import { renderMarkdown } from './preview';
 
 const app = document.getElementById('app');
@@ -20,12 +21,19 @@ if (app) {
   `;
   const nav = app.querySelector<HTMLElement>('nav[aria-label="Notes"]');
   const store = createNotesStore();
-  if (nav) mountNoteList(nav, store);
+  let editor: EditorHandle | undefined;
   const editorEl = app.querySelector<HTMLElement>('section#editor');
   const previewEl = app.querySelector<HTMLElement>(
     'section[aria-label="Preview"]',
   );
   if (editorEl && previewEl) {
-    mountEditor(editorEl, { store, render: renderMarkdown, previewEl });
+    editor = mountEditor(editorEl, {
+      store,
+      render: renderMarkdown,
+      previewEl,
+    });
+  }
+  if (nav) {
+    mountNoteList(nav, store, { beforeExport: () => editor?.flush() });
   }
 }

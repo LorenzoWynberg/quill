@@ -1,3 +1,4 @@
+import { exportNote } from '../notes';
 import type { NotesStore } from '../notes';
 
 export interface EditorDeps {
@@ -8,7 +9,11 @@ export interface EditorDeps {
 
 const DEBOUNCE_MS = 300;
 
-export function mountEditor(root: HTMLElement, deps: EditorDeps): void {
+export interface EditorHandle {
+  flush(): void;
+}
+
+export function mountEditor(root: HTMLElement, deps: EditorDeps): EditorHandle {
   const { store, render, previewEl } = deps;
 
   const empty = document.createElement('p');
@@ -24,7 +29,17 @@ export function mountEditor(root: HTMLElement, deps: EditorDeps): void {
   textarea.id = 'editor-input';
   textarea.className = 'editor-textarea';
 
-  root.replaceChildren(empty, label, textarea);
+  const header = document.createElement('div');
+  header.className = 'editor-header';
+  const exportBtn = document.createElement('button');
+  exportBtn.type = 'button';
+  exportBtn.className = 'editor-export';
+  exportBtn.textContent = 'Export';
+  exportBtn.setAttribute('aria-label', 'Export note as Markdown');
+  exportBtn.disabled = true;
+  header.append(exportBtn);
+
+  root.replaceChildren(header, empty, label, textarea);
 
   const main = root.parentElement;
   let showEditPane = (): void => {};
@@ -74,6 +89,7 @@ export function mountEditor(root: HTMLElement, deps: EditorDeps): void {
     empty.hidden = has;
     textarea.hidden = !has;
     label.hidden = !has;
+    exportBtn.disabled = !has;
     previewEl.innerHTML = has ? render(textarea.value) : '';
   }
 
@@ -94,6 +110,13 @@ export function mountEditor(root: HTMLElement, deps: EditorDeps): void {
     store.update(id, textarea.value);
     if (store.getState().writeError === null) clearPending();
   }
+
+  exportBtn.addEventListener('click', () => {
+    if (currentId === null) return;
+    flush();
+    const note = store.getState().notes.find((n) => n.id === currentId);
+    if (note) exportNote(note);
+  });
 
   textarea.addEventListener('input', () => {
     previewEl.innerHTML = render(textarea.value);
@@ -144,4 +167,6 @@ export function mountEditor(root: HTMLElement, deps: EditorDeps): void {
   currentId = store.getState().selectedId;
   textarea.value = bodyOf(currentId);
   show();
+
+  return { flush };
 }

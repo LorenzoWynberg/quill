@@ -1,4 +1,5 @@
 import { deriveTitle } from './title';
+import { exportAllNotes } from './export';
 import type { NotesStore } from './store';
 
 const MESSAGES = {
@@ -6,9 +7,14 @@ const MESSAGES = {
   unavailable: 'Storage is unavailable. Notes are not being saved.',
 } as const;
 
+export interface NoteListOptions {
+  beforeExport?: () => void;
+}
+
 export function mountNoteList(
   root: HTMLElement,
   store: NotesStore,
+  options?: NoteListOptions,
 ): () => void {
   const alert = document.createElement('div');
   alert.setAttribute('role', 'alert');
@@ -33,7 +39,21 @@ export function mountNoteList(
     create.dataset.focus = 'new';
     create.textContent = 'New note';
     create.addEventListener('click', () => store.create());
-    frag.append(create);
+    const exportAll = document.createElement('button');
+    exportAll.type = 'button';
+    exportAll.className = 'notes-export';
+    exportAll.dataset.focus = 'export';
+    exportAll.textContent = 'Export all';
+    exportAll.setAttribute('aria-label', 'Export all notes as .zip');
+    exportAll.disabled = notes.length === 0;
+    exportAll.addEventListener('click', () => {
+      options?.beforeExport?.();
+      exportAllNotes(store.getState().notes);
+    });
+    const header = document.createElement('div');
+    header.className = 'notes-header';
+    header.append(create, exportAll);
+    frag.append(header);
 
     const message = writeError ? MESSAGES[writeError] : '';
     if (alert.textContent !== message) alert.textContent = message;
