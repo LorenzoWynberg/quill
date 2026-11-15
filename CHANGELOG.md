@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.2.0 - 2026-11-15
+
+### New: back up and restore your notes
+
+Quill keeps your notes in this browser's local storage. Until now, clearing site data or moving to another computer meant losing them. Two new buttons next to **New note** fix that.
+
+#### Backup
+
+**Backup** downloads all your notes as a single file named `quill-backup-YYYY-MM-DD.json`. The file holds each note's text and its created and last-edited times. Keep it somewhere safe, or copy it to another machine.
+
+#### Restore
+
+**Restore** opens a file picker. Choose a Quill backup and its notes are merged into the ones you already have. The merge is built to be safe:
+
+- **It never deletes anything.** Notes you have now that aren't in the backup stay as they are.
+- **Newer edits win.** A note in the backup replaces your copy only if the backup's version was edited more recently. If yours is newer or the same, it's kept.
+- **Notes you don't have are added.**
+- **A bad file changes nothing.** If the file isn't a valid Quill backup, or your browser's storage is full or unavailable, your notes are left exactly as they were and Quill tells you why.
+
+When a restore finishes, a message below the buttons shows how many notes were added, updated and left unchanged. It stays until you restore again. You don't get a confirmation prompt first, because restoring can't remove or downgrade anything. Any note you're in the middle of editing is saved before the restore runs, so your latest typing isn't lost.
+
+#### Layout and accessibility
+
+New note, Backup and Restore share one row. On narrow screens the row wraps instead of scrolling sideways. All three are standard buttons with a visible focus outline, so you can reach and use them from the keyboard. Restore results are announced to screen readers.
+
 ## 0.1.0 - 2026-11-15
 
 ### New: Export your notes as Markdown
