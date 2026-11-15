@@ -181,6 +181,24 @@ describe('editor', () => {
     expect(document.activeElement).toBe(ta);
   });
 
+  it('keeps pending edits through a failed write and a storage event', () => {
+    const note = store.create();
+    const pend = vi.spyOn(store, 'setPendingLocalEdits');
+    const ta = mount();
+    type(ta, 'mine');
+    vi.spyOn(storage, 'setItem').mockImplementation(() => {
+      throw Object.assign(new Error('full'), { name: 'QuotaExceededError' });
+    });
+    vi.advanceTimersByTime(300);
+    expect(store.getState().writeError).toBe('quota');
+    pend.mockClear();
+    storage.getItem('quill:v1');
+    window.dispatchEvent(new StorageEvent('storage', { key: 'quill:v1' }));
+    expect(ta.value).toBe('mine');
+    expect(pend).not.toHaveBeenCalledWith(false);
+    expect(note.id).toBeTruthy();
+  });
+
   it('imports only types from ../notes and nothing from ../preview', () => {
     const src = readFileSync('src/editor/index.ts', 'utf8');
     const imports = src.match(/^import .*$/gm) ?? [];

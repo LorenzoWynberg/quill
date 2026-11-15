@@ -28,6 +28,7 @@ export interface NotesStore {
 
 const KEY = 'quill:v1';
 const SELECTED_KEY = 'quill:v1:selected';
+const BACKUP_PREFIX = 'quill:v1:backup:';
 
 function isNote(value: unknown): value is Note {
   if (typeof value !== 'object' || value === null) return false;
@@ -72,24 +73,41 @@ export function createNotesStore(
   let selectedId: string | null = null;
   let writeError: WriteError = null;
   let pending = false;
+  let writesBlocked = false;
   const listeners = new Set<
     (state: NotesState, source: ChangeSource) => void
   >();
 
-  function readNotes(): Note[] | 'unavailable' {
-    if (!storage) return 'unavailable';
+  interface Loaded {
+    status: 'ok' | 'unavailable';
+    notes: Note[];
+    raw: string | null;
+    damaged: boolean;
+  }
+
+  function readNotes(): Loaded {
+    if (!storage)
+      return { status: 'unavailable', notes: [], raw: null, damaged: false };
     let raw: string | null;
     try {
       raw = storage.getItem(KEY);
     } catch {
-      return 'unavailable';
+      return { status: 'unavailable', notes: [], raw: null, damaged: false };
     }
-    if (raw === null) return [];
+    if (raw === null) return { status: 'ok', notes: [], raw, damaged: false };
     try {
       const parsed: unknown = JSON.parse(raw);
-      return Array.isArray(parsed) ? parsed.filter(isNote) : [];
+      if (!Array.isArray(parsed))
+        return { status: 'ok', notes: [], raw, damaged: true };
+      const valid = parsed.filter(isNote);
+      return {
+        status: 'ok',
+        notes: valid,
+        raw,
+        damaged: valid.length !== parsed.length,
+      };
     } catch {
-      return [];
+      return { status: 'ok', notes: [], raw, damaged: true };
     }
   }
 
@@ -127,6 +145,7 @@ export function createNotesStore(
   }
 
   function persist(): void {
+    if (writesBlocked) return;
     if (!storage) {
       writeError = 'unavailable';
       return;
@@ -142,10 +161,19 @@ export function createNotesStore(
   }
 
   const loaded = readNotes();
-  if (loaded === 'unavailable') {
+  if (loaded.status === 'unavailable') {
     writeError = 'unavailable';
+    writesBlocked = Boolean(storage);
   } else {
-    notes = loaded;
+    notes = loaded.notes;
+    if (loaded.damaged && loaded.raw !== null && storage) {
+      try {
+        storage.setItem(`${BACKUP_PREFIX}${Date.now()}`, loaded.raw);
+      } catch (err) {
+        writesBlocked = true;
+        writeError = isQuota(err) ? 'quota' : 'unavailable';
+      }
+    }
   }
   selectedId = resolveSelected(readSelected());
 
@@ -154,12 +182,25 @@ export function createNotesStore(
       if (event.key !== null && event.key !== KEY) return;
       if (event.storageArea && event.storageArea !== storage) return;
       const reloaded = readNotes();
-      if (reloaded === 'unavailable') return;
+      if (reloaded.status === 'unavailable') return;
       const open = notes.find((n) => n.id === selectedId);
-      const next = reloaded.filter(
-        (n) => !(pending && open && n.id === open.id),
-      );
-      notes = pending && open ? [...next, open] : reloaded;
+      if (reloaded.damaged) {
+        const byId = new Map(notes.map((n) => [n.id, n]));
+        for (const n of reloaded.notes) {
+          const have = byId.get(n.id);
+          if (
+            !have ||
+            (n.updatedAt > have.updatedAt && !(pending && open?.id === n.id))
+          )
+            byId.set(n.id, n);
+        }
+        notes = [...byId.values()];
+      } else {
+        const next = reloaded.notes.filter(
+          (n) => !(pending && open && n.id === open.id),
+        );
+        notes = pending && open ? [...next, open] : reloaded.notes;
+      }
       selectedId = resolveSelected(selectedId);
       emit('external');
     });
