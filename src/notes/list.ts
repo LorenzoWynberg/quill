@@ -1,6 +1,6 @@
 import { deriveTitle } from './title';
 import { exportAllNotes } from './export';
-import type { NotesStore } from './store';
+import type { ImportResult, NotesStore } from './store';
 
 const MESSAGES = {
   quota: 'Storage is full. Recent changes are not being saved.',
@@ -16,6 +16,10 @@ const RESULT_MESSAGES = {
   invalid:
     'Restore failed: this is not a valid Quill backup. Nothing was changed.',
   write: 'Restore failed: notes could not be saved. Nothing was changed.',
+  unreadable:
+    'Restore failed: the file could not be read. Nothing was changed.',
+  unexpected:
+    'Restore failed unexpectedly. Check your notes before trying again.',
 } as const;
 
 function backupName(): string {
@@ -43,15 +47,27 @@ export function mountNoteList(
   input.addEventListener('change', async () => {
     const file = input.files?.[0];
     if (!file) return;
+    notice.textContent = '';
     try {
-      const text = await file.text();
-      options.beforeRestore?.();
-      const result = store.importBackup(text);
+      let text: string;
+      try {
+        text = await file.text();
+        options.beforeRestore?.();
+      } catch {
+        notice.textContent = RESULT_MESSAGES.unreadable;
+        return;
+      }
+      let result: ImportResult;
+      try {
+        result = store.importBackup(text);
+      } catch (error) {
+        console.error('Restore failed unexpectedly', error);
+        notice.textContent = RESULT_MESSAGES.unexpected;
+        return;
+      }
       notice.textContent = result.ok
         ? `Restore complete: added ${result.added}, updated ${result.updated}, unchanged ${result.unchanged}.`
         : RESULT_MESSAGES[result.reason];
-    } catch {
-      notice.textContent = RESULT_MESSAGES.invalid;
     } finally {
       input.value = '';
     }

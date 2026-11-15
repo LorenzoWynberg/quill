@@ -248,5 +248,44 @@ describe('note list', () => {
       expect(store.getState().notes).toEqual(before.notes);
       expect(store.getState().selectedId).toBe(before.selectedId);
     });
+
+    it('reports a write failure from the store', async () => {
+      const store = createNotesStore(mem());
+      store.importBackup = () => ({ ok: false, reason: 'write' });
+      mountNoteList(root, store);
+      await choose(backupFile([]));
+      expect(root.querySelector('[role="status"]')?.textContent).toBe(
+        'Restore failed: notes could not be saved. Nothing was changed.',
+      );
+    });
+
+    it('reports an unreadable file without calling the store', async () => {
+      const store = createNotesStore(mem());
+      const spy = vi.spyOn(store, 'importBackup');
+      mountNoteList(root, store);
+      const file = new File(['x'], 'b.json');
+      Object.defineProperty(file, 'text', {
+        value: () => Promise.reject(new Error('read')),
+      });
+      await choose(file);
+      expect(root.querySelector('[role="status"]')?.textContent).toBe(
+        'Restore failed: the file could not be read. Nothing was changed.',
+      );
+      expect(spy).not.toHaveBeenCalled();
+    });
+
+    it('does not claim nothing changed when the store throws', async () => {
+      const store = createNotesStore(mem());
+      store.importBackup = () => {
+        throw new Error('boom');
+      };
+      const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+      mountNoteList(root, store);
+      await choose(backupFile([]));
+      expect(root.querySelector('[role="status"]')?.textContent).toBe(
+        'Restore failed unexpectedly. Check your notes before trying again.',
+      );
+      expect(err).toHaveBeenCalled();
+    });
   });
 });
