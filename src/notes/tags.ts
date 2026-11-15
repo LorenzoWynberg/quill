@@ -4,6 +4,7 @@ export function normaliseTag(raw: string): string | null {
   const t = raw.trim();
   if (t === '' || t.includes(',') || Array.from(t).length > MAX_TAG_LENGTH)
     return null;
+  if (/[\p{Cc}\u2028\u2029]/u.test(t)) return null;
   return t;
 }
 
