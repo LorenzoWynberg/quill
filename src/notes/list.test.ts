@@ -429,6 +429,24 @@ describe('note list', () => {
       expect(root.textContent).not.toContain('No notes yet');
     });
 
+    it('drops the no-match line when the query matches again, is cleared or escaped', () => {
+      mountNoteList(root, seed());
+      const noMatch = () => root.querySelector('.notes-no-match');
+      const i = type('zzz');
+      expect(noMatch()).not.toBeNull();
+      type('banana');
+      expect(noMatch()).toBeNull();
+      expect(titles().length).toBeGreaterThan(0);
+      type('zzz');
+      root.querySelector<HTMLButtonElement>('.notes-search-clear')!.click();
+      expect(noMatch()).toBeNull();
+      expect(titles()).toHaveLength(3);
+      type('zzz');
+      i.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+      expect(noMatch()).toBeNull();
+      expect(titles()).toHaveLength(3);
+    });
+
     it('hides search with zero notes and keeps first-run text', () => {
       mountNoteList(root, createNotesStore(mem()));
       expect(root.querySelector<HTMLElement>('.notes-search')!.hidden).toBe(
