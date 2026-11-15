@@ -1,0 +1,83 @@
+nav {
+  color: var(--foreground);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.notes-new,
+.notes-item,
+.notes-delete {
+  font: inherit;
+  cursor: pointer;
+  border-radius: var(--radius);
+}
+
+.notes-new {
+  width: 100%;
+  background: var(--primary);
+  color: var(--on-primary);
+  border: 1px solid var(--primary);
+  padding: var(--spacing-2) var(--spacing-3);
+  margin-bottom: var(--spacing-3);
+}
+
+.notes-alert {
+  background: var(--warning);
+  color: var(--on-warning);
+  border-radius: var(--radius);
+  padding: var(--spacing-2) var(--spacing-3);
+  margin-bottom: var(--spacing-3);
+  font-size: var(--text-sm);
+}
+
+.notes-empty {
+  margin: 0;
+  color: var(--foreground);
+  font-size: var(--text-sm);
+}
+
+.notes-list {
+  list-style: none;
+  margin: 0;
+  padding: var(--spacing-1);
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.notes-list li {
+  display: flex;
+  gap: var(--spacing-1);
+  min-width: 0;
+  margin-bottom: var(--spacing-1);
+}
+
+.notes-item {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  background: transparent;
+  color: var(--foreground);
+  border: 0;
+  border-left: 3px solid transparent;
+  padding: var(--spacing-2) var(--spacing-3);
+  overflow-wrap: anywhere;
+}
+
+.notes-item[aria-current='true'] {
+  background: var(--elevated);
+  border-left-color: var(--primary);
+}
+
+.notes-delete {
+  background: transparent;
+  color: var(--foreground);
+  border: 1px solid var(--danger);
+  padding: var(--spacing-1) var(--spacing-2);
+  font-size: var(--text-sm);
+}
+
+@media (max-width: 720px) {
+  .notes-list {
+    max-height: 30vh;
+  }
+}
