@@ -1,7 +1,6 @@
 import { exportNote } from '../notes';
 import type { NotesStore } from '../notes';
-import { markdownToPlainText } from '../preview';
-import { countCharacters, countWords, formatCount } from './count';
+import { formatCount } from './count';
 
 export interface EditorDeps {
   store: NotesStore;
@@ -98,12 +97,8 @@ export function mountEditor(root: HTMLElement, deps: EditorDeps): EditorHandle {
       counter.textContent = '';
       return;
     }
-    const v = textarea.value;
     counter.hidden = false;
-    counter.textContent = formatCount(
-      countWords(markdownToPlainText(v)),
-      countCharacters(v),
-    );
+    counter.textContent = formatCount(textarea.value);
   }
 
   function show(): void {

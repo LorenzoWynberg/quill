@@ -270,8 +270,7 @@ describe('editor', () => {
     expect(imports).toEqual([
       "import { exportNote } from '../notes';",
       "import type { NotesStore } from '../notes';",
-      "import { markdownToPlainText } from '../preview';",
-      "import { countCharacters, countWords, formatCount } from './count';",
+      "import { formatCount } from './count';",
     ]);
   });
 
@@ -350,5 +349,20 @@ describe('editor', () => {
     store.remove(store.getState().selectedId as string);
     expect(c.hidden).toBe(true);
     expect(c.textContent).toBe('');
+  });
+
+  it('updates the count when another note is selected', () => {
+    const a = store.create();
+    store.update(a.id, 'one two three');
+    const b = store.create();
+    store.update(b.id, 'x');
+    const ta = mount();
+    const c = root.querySelector('#editor-count') as HTMLElement;
+    expect(ta.nextElementSibling).toBe(c);
+    expect(c.textContent).toBe('1 word · 1 character');
+    store.select(a.id);
+    expect(c.textContent).toBe('3 words · 13 characters');
+    expect(c.hasAttribute('aria-live')).toBe(false);
+    expect(c.hasAttribute('role')).toBe(false);
   });
 });

@@ -26,7 +26,7 @@ function collect(tokens: Tok[], out: string[]): void {
       out.push(' ', t.content, ' ');
     } else if (t.type === 'softbreak' || t.type === 'hardbreak') out.push(' ');
     else if (t.children) collect(t.children, out);
-    else out.push(' ');
+    else if (t.block) out.push(' ');
   }
 }
 
