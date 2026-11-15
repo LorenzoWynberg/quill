@@ -44,6 +44,9 @@ export function mountNoteList(
   const notice = document.createElement('div');
   notice.setAttribute('role', 'status');
   notice.className = 'notes-notice';
+  const live = document.createElement('div');
+  live.className = 'notes-live sr-only';
+  live.setAttribute('aria-live', 'polite');
   const input = document.createElement('input');
   input.type = 'file';
   input.accept = 'application/json,.json';
@@ -164,6 +167,7 @@ export function mountNoteList(
   root.replaceChildren(
     alert,
     notice,
+    live,
     input,
     actionsHost,
     viewHost,
@@ -349,7 +353,24 @@ export function mountNoteList(
           const i = visible.findIndex((v) => v.id === note.id);
           const neighbour = visible[i + 1] ?? visible[i - 1];
           pendingFocus = neighbour ? `${kind}:${neighbour.id}` : `view:${view}`;
-          store.setArchived(note.id, view === 'notes');
+          const archiving = view === 'notes';
+          const before = store
+            .getState()
+            .notes.find((n) => n.id === note.id)?.archivedAt;
+          store.setArchived(note.id, archiving);
+          // A no-op change notifies nobody; drop focus intent so it can't leak.
+          pendingFocus = undefined;
+          const changed = store.getState().notes.find((n) => n.id === note.id);
+          if (
+            changed &&
+            (before !== undefined) !== (changed.archivedAt !== undefined)
+          ) {
+            const count = store
+              .getState()
+              .notes.filter((n) => n.archivedAt !== undefined).length;
+            live.textContent = '';
+            live.textContent = `${archiving ? 'Archived' : 'Restored'} "${title}". Archived (${count}).`;
+          }
         });
         const del = document.createElement('button');
         del.type = 'button';
@@ -399,7 +420,7 @@ export function mountNoteList(
       ];
       (
         all.find((el) => el.dataset.focus === focusKey) ??
-        viewHost.querySelector<HTMLElement>(`[data-focus="view:${view}"]`)
+        actionsHost.querySelector<HTMLElement>('[data-focus="new"]')
       )?.focus();
     }
   }

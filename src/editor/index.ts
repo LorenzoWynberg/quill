@@ -49,7 +49,10 @@ export function mountEditor(root: HTMLElement, deps: EditorDeps): EditorHandle {
   restoreBtn.textContent = 'Restore';
   restoreBtn.setAttribute('aria-label', 'Restore note from archive');
   notice.append(noticeText, restoreBtn);
-  header.append(notice, exportBtn);
+  const live = document.createElement('div');
+  live.className = 'editor-archived-live sr-only';
+  live.setAttribute('aria-live', 'polite');
+  header.append(notice, live, exportBtn);
 
   const tagField = document.createElement('div');
   tagField.className = 'tag-field';
@@ -124,7 +127,10 @@ export function mountEditor(root: HTMLElement, deps: EditorDeps): EditorHandle {
   }
 
   function renderArchived(): void {
-    notice.hidden = !isArchived();
+    const archived = isArchived();
+    notice.hidden = !archived;
+    const message = archived ? 'This note is archived.' : '';
+    if (live.textContent !== message) live.textContent = message;
   }
 
   function show(): void {

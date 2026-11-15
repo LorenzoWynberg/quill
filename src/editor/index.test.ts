@@ -588,6 +588,21 @@ describe('archived notice', () => {
     );
   });
 
+  it('announces archive and restore through a persistent live region', () => {
+    const n = store.create();
+    store.select(n.id);
+    mount();
+    const live = root.querySelector('.editor-archived-live') as HTMLElement;
+    expect(live.hidden).toBe(false);
+    expect(live.textContent).toBe('');
+    store.setArchived(n.id, true);
+    store.select(n.id);
+    expect(root.querySelector('.editor-archived-live')).toBe(live);
+    expect(live.textContent).toBe('This note is archived.');
+    store.setArchived(n.id, false);
+    expect(live.textContent).toBe('');
+  });
+
   it('Restore unarchives, hides the notice and focuses the textarea', () => {
     const n = store.create();
     store.setArchived(n.id, true);
