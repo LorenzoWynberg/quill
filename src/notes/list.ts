@@ -228,8 +228,6 @@ export function mountNoteList(
   let toastIds: string[] = [];
   let toastArchived = true;
   let toastTimer: ReturnType<typeof setTimeout> | undefined;
-  // The timer also pauses under the pointer, so Undo can't vanish mid-reach.
-  let hovered = false;
   function stopTimer(): void {
     if (toastTimer !== undefined) clearTimeout(toastTimer);
     toastTimer = undefined;
@@ -240,7 +238,6 @@ export function mountNoteList(
   }
   function hideToast(): void {
     stopTimer();
-    hovered = false;
     toast.hidden = true;
   }
   function showToast(ids: string[], archived: boolean): void {
@@ -249,23 +246,12 @@ export function mountNoteList(
     toastText.textContent = `${plural(ids.length)} ${archived ? 'archived' : 'restored'}`;
     if (toast.firstChild !== toastText) toast.replaceChildren(toastText, undo);
     toast.hidden = false;
-    if (hovered) stopTimer();
-    else startTimer();
+    startTimer();
   }
   toast.addEventListener('focusin', stopTimer);
   toast.addEventListener('focusout', (e) => {
     const next = e.relatedTarget;
-    if (toast.hidden || hovered) return;
-    if (next instanceof Node && toast.contains(next)) return;
-    startTimer();
-  });
-  toast.addEventListener('mouseenter', () => {
-    hovered = true;
-    stopTimer();
-  });
-  toast.addEventListener('mouseleave', () => {
-    hovered = false;
-    if (toast.hidden || toast.contains(document.activeElement)) return;
+    if (toast.hidden || (next instanceof Node && toast.contains(next))) return;
     startTimer();
   });
   undo.addEventListener('click', () => {
