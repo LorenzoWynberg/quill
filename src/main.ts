@@ -34,6 +34,9 @@ if (app) {
     });
   }
   if (nav) {
-    mountNoteList(nav, store, { beforeExport: () => editor?.flush() });
+    mountNoteList(nav, store, {
+      beforeExport: () => editor?.flush(),
+      beforeRestore: () => editor?.flush(),
+    });
   }
 }

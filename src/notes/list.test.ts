@@ -70,7 +70,7 @@ describe('note list', () => {
     confirm.mockReturnValue(true);
     root.querySelector<HTMLButtonElement>('.notes-delete')?.click();
     expect(root.querySelectorAll('li')).toHaveLength(0);
-    expect(root.textContent?.toLowerCase()).not.toMatch(/undo|restore|trash/);
+    expect(root.textContent?.toLowerCase()).not.toMatch(/undo|trash/);
     expect(createNotesStore(storage).getState().notes).toEqual([]);
   });
 
@@ -151,5 +151,158 @@ describe('note list', () => {
     expect(order).toEqual(['before', 'download']);
     expect(names[0]).toMatch(/^quill-notes-\d{4}-\d{2}-\d{2}\.zip$/);
     expect(document.activeElement).toBe(btn());
+  });
+
+  describe('backup and restore', () => {
+    const backupFile = (notes: unknown[]) =>
+      new File([JSON.stringify({ app: 'quill', format: 1, notes })], 'b.json');
+    const choose = async (file: File): Promise<HTMLInputElement> => {
+      const input = root.querySelector(
+        'input[type="file"]',
+      ) as HTMLInputElement;
+      Object.defineProperty(input, 'files', {
+        value: [file],
+        configurable: true,
+      });
+      input.dispatchEvent(new Event('change'));
+      await vi.waitFor(() =>
+        expect(root.querySelector('[role="status"]')?.textContent).not.toBe(''),
+      );
+      return input;
+    };
+
+    it('renders native buttons in order and keeps focus', () => {
+      const store = createNotesStore(mem());
+      mountNoteList(root, store);
+      const labels = [...root.querySelectorAll('.notes-actions button')].map(
+        (b) => [b.tagName, b.getAttribute('type'), b.textContent],
+      );
+      expect(labels).toEqual([
+        ['BUTTON', 'button', 'New note'],
+        ['BUTTON', 'button', 'Export all'],
+        ['BUTTON', 'button', 'Backup'],
+        ['BUTTON', 'button', 'Restore'],
+      ]);
+      root.querySelector<HTMLElement>('[data-focus="backup"]')?.focus();
+      store.create();
+      expect((document.activeElement as HTMLElement).dataset.focus).toBe(
+        'backup',
+      );
+    });
+
+    it('downloads a dated JSON blob and revokes the URL', () => {
+      const store = createNotesStore(mem());
+      store.create();
+      const create = vi.fn(() => 'blob:x');
+      const revoke = vi.fn();
+      vi.stubGlobal('URL', {
+        createObjectURL: create,
+        revokeObjectURL: revoke,
+      });
+      let name = '';
+      vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(
+        function (this: HTMLAnchorElement) {
+          name = this.download;
+        },
+      );
+      const confirm = vi.fn(() => true);
+      window.confirm = confirm;
+      mountNoteList(root, store);
+      root.querySelector<HTMLElement>('[data-focus="backup"]')?.click();
+      const blob = (create.mock.calls[0] as unknown as [Blob])[0];
+      expect(blob.type).toBe('application/json');
+      expect(name).toMatch(/^quill-backup-\d{4}-\d{2}-\d{2}\.json$/);
+      expect(revoke).toHaveBeenCalledWith('blob:x');
+      expect(confirm).not.toHaveBeenCalled();
+    });
+
+    it('restores with counts, calling beforeRestore first', async () => {
+      const store = createNotesStore(mem());
+      const order: string[] = [];
+      const orig = store.importBackup;
+      store.importBackup = (t) => {
+        order.push('import');
+        return orig(t);
+      };
+      mountNoteList(root, store, { beforeRestore: () => order.push('before') });
+      const input = await choose(
+        backupFile([{ id: 'a', body: '# Hi', createdAt: 1, updatedAt: 2 }]),
+      );
+      expect(root.querySelector('[role="status"]')?.textContent).toBe(
+        'Restore complete: added 1, updated 0, unchanged 0.',
+      );
+      expect(order).toEqual(['before', 'import']);
+      expect(root.querySelectorAll('li')).toHaveLength(1);
+      expect(input.value).toBe('');
+    });
+
+    it('reports an invalid file and changes nothing', async () => {
+      const store = createNotesStore(mem());
+      store.create();
+      const before = store.getState();
+      mountNoteList(root, store);
+      await choose(new File(['nope'], 'b.json'));
+      expect(root.querySelector('[role="status"]')?.textContent).toBe(
+        'Restore failed: this is not a valid Quill backup. Nothing was changed.',
+      );
+      expect(store.getState().notes).toEqual(before.notes);
+      expect(store.getState().selectedId).toBe(before.selectedId);
+    });
+
+    it('reports a write failure from the store', async () => {
+      const store = createNotesStore(mem());
+      store.importBackup = () => ({ ok: false, reason: 'write' });
+      mountNoteList(root, store);
+      await choose(backupFile([]));
+      expect(root.querySelector('[role="status"]')?.textContent).toBe(
+        'Restore failed: notes could not be saved. Nothing was changed.',
+      );
+    });
+
+    it('reports an unreadable file without calling the store', async () => {
+      const store = createNotesStore(mem());
+      const spy = vi.spyOn(store, 'importBackup');
+      mountNoteList(root, store);
+      const file = new File(['x'], 'b.json');
+      Object.defineProperty(file, 'text', {
+        value: () => Promise.reject(new Error('read')),
+      });
+      await choose(file);
+      expect(root.querySelector('[role="status"]')?.textContent).toBe(
+        'Restore failed: the file could not be read. Nothing was changed.',
+      );
+      expect(spy).not.toHaveBeenCalled();
+    });
+
+    it('aborts and says so when beforeRestore throws', async () => {
+      const store = createNotesStore(mem());
+      const spy = vi.spyOn(store, 'importBackup');
+      const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+      mountNoteList(root, store, {
+        beforeRestore: () => {
+          throw new Error('flush');
+        },
+      });
+      await choose(backupFile([]));
+      expect(root.querySelector('[role="status"]')?.textContent).toBe(
+        'Restore cancelled: your open note could not be saved first. Nothing was changed.',
+      );
+      expect(spy).not.toHaveBeenCalled();
+      expect(err).toHaveBeenCalled();
+    });
+
+    it('does not claim nothing changed when the store throws', async () => {
+      const store = createNotesStore(mem());
+      store.importBackup = () => {
+        throw new Error('boom');
+      };
+      const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+      mountNoteList(root, store);
+      await choose(backupFile([]));
+      expect(root.querySelector('[role="status"]')?.textContent).toBe(
+        'Restore failed unexpectedly. Check your notes before trying again.',
+      );
+      expect(err).toHaveBeenCalled();
+    });
   });
 });

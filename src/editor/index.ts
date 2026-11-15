@@ -7,11 +7,11 @@ export interface EditorDeps {
   previewEl: HTMLElement;
 }
 
-const DEBOUNCE_MS = 300;
-
 export interface EditorHandle {
   flush(): void;
 }
+
+const DEBOUNCE_MS = 300;
 
 export function mountEditor(root: HTMLElement, deps: EditorDeps): EditorHandle {
   const { store, render, previewEl } = deps;
@@ -167,6 +167,5 @@ export function mountEditor(root: HTMLElement, deps: EditorDeps): EditorHandle {
   currentId = store.getState().selectedId;
   textarea.value = bodyOf(currentId);
   show();
-
   return { flush };
 }
