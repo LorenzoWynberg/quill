@@ -10,7 +10,7 @@ The note list now has a search box at the top. Start typing and the list narrows
 
 To clear a search, press **Escape** or click **Clear search**. Focus goes back to the search box so you can type again straight away. Creating a new note also clears the search, so the new note is always visible in the list.
 
-While you search, the list shows how many notes match, for example *3 notes match "recipe"*. If none match, it says *No notes match "recipe"* instead of showing an empty list. Screen readers announce these messages too. The search box stays hidden until you have at least one note.
+While you search, the list shows how many notes match, for example _3 notes match "recipe"_. If none match, it says _No notes match "recipe"_ instead of showing an empty list. Screen readers announce these messages too. The search box stays hidden until you have at least one note.
 
 #### Your notes stay as they are
 
@@ -20,7 +20,7 @@ Search only changes which notes the list shows. It never changes or removes a no
 
 ### Fixed
 
-**Exported notes now get clean, portable file names.** Before this fix, a note titled something like "Plan  for  May..." exported as `Plan  for  May....md`. Repeated spaces and the dots stacked in front of `.md` caused some filesystems and sync tools to reject or rename the file. Runs of whitespace in a title now collapse to a single space, and any dots or spaces just before the extension are removed, so the same note exports as `Plan for May.md`.
+**Exported notes now get clean, portable file names.** Before this fix, a note titled something like `Plan  for  May...` exported as `Plan  for  May....md`. Repeated spaces and the dots stacked in front of `.md` caused some filesystems and sync tools to reject or rename the file. Runs of whitespace in a title now collapse to a single space, and any dots or spaces just before the extension are removed, so the same note exports as `Plan for May.md`.
 
 The fix covers single-note export and the zip export of all your notes, so both produce the same names. Your notes are unchanged; only the names of the exported files differ. If you have scripts or folders that expect the old names, you may see slightly different names on your next export.
 
