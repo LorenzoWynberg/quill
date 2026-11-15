@@ -150,6 +150,11 @@ nav {
   .notes-list {
     max-height: 30vh;
   }
+
+  .notes-tag-filter {
+    flex-basis: 100%;
+    max-width: 100%;
+  }
 }
 
 .notes-search {
@@ -199,4 +204,54 @@ nav {
   margin: 0;
   color: var(--foreground);
   font-size: var(--text-sm);
+}
+
+.notes-tag-filter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-2);
+  flex: 1 1 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.notes-tag-filter[hidden],
+.notes-tag-clear[hidden] {
+  display: none;
+}
+
+.notes-tag-label {
+  font-size: var(--text-sm);
+  color: var(--foreground);
+}
+
+.notes-tag-select {
+  flex: 1;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 2.75rem;
+  padding: var(--spacing-2) var(--spacing-3);
+  font: inherit;
+  background: var(--elevated);
+  color: var(--foreground);
+  border: 1px solid var(--foreground);
+  border-radius: var(--radius);
+}
+
+.notes-tag-clear {
+  min-height: 2.75rem;
+  padding: var(--spacing-2) var(--spacing-3);
+  font: inherit;
+  cursor: pointer;
+  background: transparent;
+  color: var(--foreground);
+  border: 1px solid var(--foreground);
+  border-radius: var(--radius);
+}
+
+.notes-tag-select:focus-visible,
+.notes-tag-clear:focus-visible {
+  outline: 2px solid var(--foreground);
+  outline-offset: 2px;
 }

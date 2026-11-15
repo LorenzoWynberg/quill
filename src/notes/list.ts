@@ -1,5 +1,6 @@
 import { deriveTitle } from './title';
 import { matchesQuery } from './search';
+import { sameTag } from './tags';
 import { exportAllNotes } from './export';
 import type { ImportResult, NotesStore } from './store';
 
@@ -87,6 +88,7 @@ export function mountNoteList(
   statusHost.setAttribute('role', 'status');
   statusHost.className = 'notes-search-status';
   let query = '';
+  let activeTag = '';
 
   const searchRegion = document.createElement('div');
   searchRegion.className = 'notes-search';
@@ -100,7 +102,43 @@ export function mountNoteList(
   clearBtn.className = 'notes-search-clear';
   clearBtn.textContent = 'Clear search';
   clearBtn.hidden = true;
-  searchRegion.append(searchInput, clearBtn);
+  const filterRow = document.createElement('div');
+  filterRow.className = 'notes-tag-filter';
+  const tagId = 'notes-tag-select';
+  const tagLabel = document.createElement('label');
+  tagLabel.htmlFor = tagId;
+  tagLabel.className = 'notes-tag-label';
+  tagLabel.textContent = 'Filter by tag';
+  const tagSelect = document.createElement('select');
+  tagSelect.id = tagId;
+  tagSelect.className = 'notes-tag-select';
+  tagSelect.dataset.focus = 'tag-filter';
+  const tagClear = document.createElement('button');
+  tagClear.type = 'button';
+  tagClear.className = 'notes-tag-clear';
+  tagClear.textContent = 'Clear tag filter';
+  tagClear.hidden = true;
+  filterRow.append(tagLabel, tagSelect, tagClear);
+  searchRegion.append(searchInput, clearBtn, filterRow);
+  tagSelect.addEventListener('change', () => {
+    activeTag = tagSelect.value;
+    render();
+  });
+  tagSelect.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape' || activeTag === '') return;
+    e.preventDefault();
+    clearTag();
+    render();
+  });
+  tagClear.addEventListener('click', () => {
+    clearTag();
+    render();
+    tagSelect.focus();
+  });
+  function clearTag(): void {
+    activeTag = '';
+    tagSelect.value = '';
+  }
   searchInput.addEventListener('input', () => {
     query = searchInput.value;
     render();
@@ -177,6 +215,7 @@ export function mountNoteList(
     actions.append(
       action('new', 'New note', 'notes-new', () => {
         clearQuery();
+        clearTag();
         store.create();
       }),
       exportAll,
@@ -192,7 +231,33 @@ export function mountNoteList(
     if (notes.length === 0 && query !== '') clearQuery();
     searchRegion.hidden = notes.length === 0;
     clearBtn.hidden = query === '';
-    const visible = notes.filter((n) => matchesQuery(n.body, query));
+    const tags: string[] = [];
+    for (const n of notes)
+      for (const t of n.tags)
+        if (!tags.some((x) => sameTag(x, t))) tags.push(t);
+    tags.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+    if (activeTag !== '' && !tags.some((t) => sameTag(t, activeTag)))
+      activeTag = '';
+    const allOpt = document.createElement('option');
+    allOpt.value = '';
+    allOpt.textContent = 'All tags';
+    tagSelect.replaceChildren(
+      allOpt,
+      ...tags.map((t) => {
+        const o = document.createElement('option');
+        o.value = t;
+        o.textContent = t;
+        return o;
+      }),
+    );
+    tagSelect.value = activeTag;
+    filterRow.hidden = tags.length === 0;
+    tagClear.hidden = activeTag === '';
+    const visible = notes.filter(
+      (n) =>
+        matchesQuery(n.body, query) &&
+        (activeTag === '' || n.tags.some((t) => sameTag(t, activeTag))),
+    );
     const frag = document.createDocumentFragment();
 
     if (notes.length === 0) {
@@ -203,7 +268,13 @@ export function mountNoteList(
     } else if (visible.length === 0) {
       const none = document.createElement('p');
       none.className = 'notes-no-match';
-      none.textContent = `No notes match "${query.trim()}"`;
+      const q = query.trim();
+      none.textContent =
+        activeTag === ''
+          ? `No notes match "${q}"`
+          : q === ''
+            ? `No notes tagged "${activeTag}"`
+            : `No notes tagged "${activeTag}" match "${q}"`;
       statusHost.replaceChildren(none);
     } else {
       const ul = document.createElement('ul');
@@ -260,6 +331,7 @@ export function mountNoteList(
     if (focusKey) {
       const all = [
         ...actionsHost.querySelectorAll<HTMLElement>('[data-focus]'),
+        ...filterRow.querySelectorAll<HTMLElement>('[data-focus]'),
         ...listHost.querySelectorAll<HTMLElement>('[data-focus]'),
       ];
       (
