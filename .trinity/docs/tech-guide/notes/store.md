@@ -4,10 +4,14 @@
 
 ## Storage
 
-- Notes are a JSON array of `{ id, body, createdAt, updatedAt }` under the `localStorage` key `quill:v1`. The selected note id is under `quill:v1:selected`.
+- Notes are a JSON array of `{ id, body, createdAt, updatedAt, starred? }` under the `localStorage` key `quill:v1`. The selected note id is under `quill:v1:selected`.
 - On load, a missing key, corrupt JSON or a non-array value gives an empty list without throwing; entries that are not valid notes are dropped.
-- `getState()` returns notes sorted most-recent-first by `updatedAt`. `create` and `update` bump `updatedAt` to stay strictly above the newest existing value, so order is stable within one millisecond.
+- `getState()` returns starred notes first, then most-recent-first by `updatedAt` within each group. `create` and `update` bump `updatedAt` to stay strictly above the newest existing value, so order is stable within one millisecond.
 - If the selected id is missing or unknown, the most recently updated note is selected. Deleting the selected note selects the most recent remaining one.
+
+## Starring
+
+`setStarred(id, starred)` sets or clears a note's optional `starred` flag. It persists and emits `'local'`, does not bump `updatedAt`, and does nothing when the flag already matches. Only `starred: true` is stored; an unstarred note has no field. The list shows a `notes-star` toggle button per note with `aria-pressed`, and the flag is kept in backups and restores. During an external reload with pending local edits, the open note keeps this tab's text but takes the other tab's `starred`.
 
 ## Write failures
 
