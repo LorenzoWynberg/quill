@@ -13,5 +13,5 @@
 - The filter is list-only: the store is never changed, and the editor, export and backup still see every note.
 - Escape in the input clears the query, as does Clear search (focus returns to the input). New note clears the query so the new note is visible.
 - The search row is hidden while there are no notes, and a query is dropped when the list empties.
-- When notes exist but none match, a `role="status"` region shows `No notes match "<query>"`. Result counts are not announced.
+- When notes exist but none match, a `role="status"` region shows `No notes match "<query>"`. While a query is set and notes match, the same region announces the count: `1 note matches "<query>"` or `N notes match "<query>"`. It is emptied when the query is cleared.
 - Focus restore after a render looks in both the actions row and the list.

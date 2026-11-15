@@ -85,6 +85,7 @@ export function mountNoteList(
   const listHost = document.createElement('div');
   const statusHost = document.createElement('div');
   statusHost.setAttribute('role', 'status');
+  statusHost.className = 'notes-search-status';
   let query = '';
 
   const searchRegion = document.createElement('div');
@@ -233,7 +234,12 @@ export function mountNoteList(
       frag.append(ul);
     }
 
-    if (visible.length > 0 || notes.length === 0) statusHost.replaceChildren();
+    if (visible.length > 0 && query.trim() !== '') {
+      const n = visible.length;
+      statusHost.textContent = `${n} ${n === 1 ? 'note matches' : 'notes match'} "${query.trim()}"`;
+    } else if (visible.length > 0 || notes.length === 0) {
+      statusHost.replaceChildren();
+    }
     listHost.replaceChildren(frag);
     if (focusKey) {
       const all = [
