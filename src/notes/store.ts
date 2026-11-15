@@ -6,6 +6,7 @@ export interface Note {
   createdAt: number;
   updatedAt: number;
   starred?: boolean;
+  archivedAt?: number;
   tags: string[];
 }
 
@@ -32,6 +33,8 @@ export interface NotesStore {
   update(id: string, body: string): void;
   remove(id: string): void;
   setStarred(id: string, starred: boolean): void;
+  setArchived(id: string, archived: boolean): void;
+  setArchivedMany(ids: readonly string[], archived: boolean): void;
   setTags(id: string, tags: readonly string[]): void;
   setPendingLocalEdits(pending: boolean): void;
   exportBackup(): string;
@@ -66,7 +69,14 @@ function normalise(n: Note): Note {
         : [],
     ),
   };
-  return n.starred === true ? { ...base, starred: true } : base;
+  const raw: unknown = n.archivedAt;
+  return {
+    ...base,
+    ...(n.starred === true ? { starred: true } : {}),
+    ...(typeof raw === 'number' && Number.isFinite(raw) && raw > 0
+      ? { archivedAt: raw }
+      : {}),
+  };
 }
 
 function isQuota(err: unknown): boolean {
@@ -149,7 +159,9 @@ export function createNotesStore(
 
   function mostRecent(list: Note[]): string | null {
     let best: Note | null = null;
-    for (const n of list) if (!best || n.updatedAt > best.updatedAt) best = n;
+    for (const n of list)
+      if (n.archivedAt === undefined && (!best || n.updatedAt > best.updatedAt))
+        best = n;
     return best?.id ?? null;
   }
 
@@ -241,6 +253,7 @@ export function createNotesStore(
             ? normalise({
                 ...open,
                 starred: theirs.starred,
+                archivedAt: theirs.archivedAt,
                 tags: theirs.tags,
               })
             : open;
@@ -250,6 +263,36 @@ export function createNotesStore(
       selectedId = resolveSelected(selectedId);
       emit('external');
     });
+  }
+
+  function setArchivedMany(list: readonly string[], archived: boolean): void {
+    const ids = new Set(list);
+    const changed = new Set(
+      notes
+        .filter(
+          (n) => ids.has(n.id) && (n.archivedAt !== undefined) !== archived,
+        )
+        .map((n) => n.id),
+    );
+    if (changed.size === 0) return;
+    const t = Date.now();
+    const before = getState().notes;
+    notes = notes.map((n) => {
+      if (!changed.has(n.id)) return n;
+      const { archivedAt: _drop, ...rest } = n;
+      void _drop;
+      return archived ? { ...rest, archivedAt: t } : rest;
+    });
+    if (archived && selectedId !== null && changed.has(selectedId)) {
+      const order = getState().notes;
+      const idx = before.findIndex((n) => n.id === selectedId);
+      const live = (n: Note): boolean => n.archivedAt === undefined;
+      const after = order.slice(idx + 1).find(live);
+      const prior = order.slice(0, idx).reverse().find(live);
+      selectedId = (after ?? prior)?.id ?? null;
+    }
+    persist();
+    emit('local');
   }
 
   return {
@@ -311,6 +354,10 @@ export function createNotesStore(
       persist();
       emit('local');
     },
+    setArchived(id, archived) {
+      setArchivedMany([id], archived);
+    },
+    setArchivedMany,
     setTags(id, tags) {
       const current = notes.find((n) => n.id === id);
       if (!current) return;
@@ -341,6 +388,7 @@ export function createNotesStore(
           createdAt: n.createdAt,
           updatedAt: n.updatedAt,
           ...(n.starred ? { starred: true } : {}),
+          ...(n.archivedAt !== undefined ? { archivedAt: n.archivedAt } : {}),
           tags: n.tags,
         })),
       });

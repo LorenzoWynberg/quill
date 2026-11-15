@@ -581,4 +581,107 @@ describe('notes store', () => {
       );
     });
   });
+
+  describe('archive', () => {
+    const writes = (spy: { mock: { calls: unknown[][] } }) =>
+      spy.mock.calls.filter((c) => c[0] === 'quill:v1').length;
+
+    it('archives and unarchives without touching updatedAt, and persists', () => {
+      const s = new MemStorage();
+      seed(s, [{ ...n('a', 'A', 5), starred: true, tags: ['t'] }]);
+      const store = createNotesStore(s);
+      store.setArchived('a', true);
+      const got = store.getState().notes[0];
+      expect(got?.archivedAt).toBeGreaterThan(0);
+      expect(got).toMatchObject({ updatedAt: 5, body: 'A', starred: true });
+      expect(JSON.parse(s.data.get('quill:v1') ?? '[]')[0].archivedAt).toBe(
+        got?.archivedAt,
+      );
+      expect(createNotesStore(s).getState().notes[0]?.archivedAt).toBe(
+        got?.archivedAt,
+      );
+      store.setArchived('a', false);
+      expect(store.getState().notes[0]).not.toHaveProperty('archivedAt');
+    });
+
+    it('drops an invalid archivedAt without a backup copy', () => {
+      const s = new MemStorage();
+      seed(s, [
+        { ...n('a', 'A', 1), archivedAt: 'x' },
+        { ...n('b', 'B', 2), archivedAt: -3 },
+      ]);
+      const store = createNotesStore(s);
+      expect(store.getState().notes.some((x) => 'archivedAt' in x)).toBe(false);
+      expect([...s.data.keys()].some((k) => k.includes('backup'))).toBe(false);
+    });
+
+    it('writes and emits once per batch, and not at all for a no-op', () => {
+      const s = new MemStorage();
+      seed(s, [n('a', 'A', 1), n('b', 'B', 2), n('c', 'C', 3)]);
+      const store = createNotesStore(s);
+      const spy = vi.spyOn(s, 'setItem');
+      const listener = vi.fn();
+      store.subscribe(listener);
+      store.setArchivedMany(['a', 'b', 'zzz'], true);
+      expect(writes(spy)).toBe(1);
+      expect(listener).toHaveBeenCalledTimes(1);
+      store.setArchivedMany(['a', 'b'], true);
+      store.setArchivedMany(['c'], false);
+      expect(writes(spy)).toBe(1);
+      expect(listener).toHaveBeenCalledTimes(1);
+    });
+
+    it('moves selection to the next unarchived note, else previous, else null', () => {
+      const s = new MemStorage();
+      seed(s, [n('a', 'A', 3), n('b', 'B', 2), n('c', 'C', 1)]);
+      const store = createNotesStore(s);
+      store.select('a');
+      store.setArchivedMany(['a', 'b'], true);
+      expect(store.getState().selectedId).toBe('c');
+      store.setArchived('c', true);
+      expect(store.getState().selectedId).toBeNull();
+      const t = new MemStorage();
+      seed(t, [n('a', 'A', 3), n('b', 'B', 2), n('c', 'C', 1)]);
+      const two = createNotesStore(t);
+      two.select('c');
+      two.setArchived('c', true);
+      expect(two.getState().selectedId).toBe('b');
+    });
+
+    it('does not pick an archived note as the most recent on load', () => {
+      const s = new MemStorage();
+      seed(s, [{ ...n('a', 'A', 9), archivedAt: 5 }, n('b', 'B', 1)]);
+      expect(createNotesStore(s).getState().selectedId).toBe('b');
+    });
+
+    it('round-trips through backup, with the newer copy winning', () => {
+      const s = new MemStorage();
+      seed(s, [n('a', 'A', 1)]);
+      const store = createNotesStore(s);
+      store.setArchived('a', true);
+      const text = store.exportBackup();
+      expect(JSON.parse(text).notes[0]).toHaveProperty('archivedAt');
+      const other = createNotesStore(new MemStorage());
+      other.importBackup(text);
+      expect(other.getState().notes[0]?.archivedAt).toBe(
+        store.getState().notes[0]?.archivedAt,
+      );
+      const stale = JSON.stringify({
+        app: 'quill',
+        format: 1,
+        notes: [{ ...n('a', 'A', 1), archivedAt: 99 }],
+      });
+      expect(other.importBackup(stale)).toMatchObject({ unchanged: 1 });
+    });
+
+    it('carries archivedAt through a cross-tab merge of pending edits', () => {
+      const s = new MemStorage();
+      seed(s, [n('a', 'A', 1)]);
+      const store = createNotesStore(s);
+      store.setPendingLocalEdits(true);
+      seed(s, [{ ...n('a', 'A', 2), archivedAt: 7 }]);
+      window.dispatchEvent(new StorageEvent('storage', { key: 'quill:v1' }));
+      expect(store.getState().notes[0]?.archivedAt).toBe(7);
+    });
+  });
 });
