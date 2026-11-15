@@ -19,11 +19,11 @@ The store listens for `storage` events on `quill:v1` (and a `null` key, which me
 
 ## List
 
-`mountNoteList(root, store, options?)` renders a New note, Backup and Restore button row, the alert, a `role="status"` notice, and one open and one Delete button per note. Delete asks `window.confirm` first. After each render, focus returns to the element with the same `data-focus` key, or to New note if it is gone. It returns an unsubscribe function.
+`mountNoteList(root, store, options?)` renders a New note, Back up and Restore button row, the alert, a `role="status"` notice, and one open and one Delete button per note. Delete asks `window.confirm` first. After each render, focus returns to the element with the same `data-focus` key, or to New note if it is gone. It returns an unsubscribe function.
 
 ## Backup and restore
 
-`exportBackup()` returns JSON `{ app: 'quill', format: 1, exportedAt, notes }` with each note's `id`, `body`, `createdAt` and `updatedAt`. The Backup button downloads it as `quill-backup-YYYY-MM-DD.json`.
+`exportBackup()` returns JSON `{ app: 'quill', format: 1, exportedAt, notes }` with each note's `id`, `body`, `createdAt` and `updatedAt`. The Back up button (aria-label "Back up all notes as a JSON file") downloads it as `quill-backup-YYYY-MM-DD.json`.
 
 `importBackup(text)` is a non-destructive merge and returns an `ImportResult`:
 

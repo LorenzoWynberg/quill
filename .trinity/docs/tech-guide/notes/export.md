@@ -17,5 +17,5 @@
 ## UI
 
 - The editor has an Export button, disabled when no note is open. It calls `flush()` so pending edits are saved, then exports the stored note.
-- The note list has an Export all button, disabled with no notes. `mountNoteList(root, store, { beforeExport })` runs `beforeExport` first; `src/main.ts` passes the editor's `flush`.
+- The note list has an Export all button (aria-label "Export all notes as a zip"), disabled with no notes. `mountNoteList(root, store, { beforeExport })` runs `beforeExport` first; `src/main.ts` passes the editor's `flush`.
 - `mountEditor` returns an `EditorHandle` with `flush()`.

@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.2.3 - 2026-11-15
+
+### Improved
+
+#### Clearer download buttons for screen-reader users
+
+Screen readers now say what the **Export all** and **Back up** buttons download. **Export all** is announced as giving you a zip of your notes, and **Back up** as giving you a JSON backup file. You no longer have to guess which button gives you which file.
+
+Each spoken name still starts with the label you see on screen. If you use voice control, saying "Export all" or "Back up" still activates the right button. This meets the WCAG 2.5.3 *Label in Name* accessibility standard (level AA).
+
+The only visible change is that the **Backup** button is now labelled **Back up**. The buttons keep their order and download the same files as before, and **Export all** still turns off once you delete your last note.
+
 ## 0.2.2 - 2026-11-15
 
 ### Improved
@@ -16,7 +28,7 @@ Other Restore messages keep their current wording. These are the success summary
 
 ### Fixed
 
-**Exported notes now get clean, portable file names.** Before this fix, a note titled something like "Plan  for  May..." exported as `Plan  for  May....md`. Repeated spaces and the dots stacked in front of `.md` caused some filesystems and sync tools to reject or rename the file. Runs of whitespace in a title now collapse to a single space, and any dots or spaces just before the extension are removed, so the same note exports as `Plan for May.md`.
+**Exported notes now get clean, portable file names.** Before this fix, a note titled something like `Plan  for  May...` (two spaces between words) exported as `Plan  for  May....md`. Repeated spaces and the dots stacked in front of `.md` caused some filesystems and sync tools to reject or rename the file. Runs of whitespace in a title now collapse to a single space, and any dots or spaces just before the extension are removed, so the same note exports as `Plan for May.md`.
 
 The fix covers single-note export and the zip export of all your notes, so both produce the same names. Your notes are unchanged; only the names of the exported files differ. If you have scripts or folders that expect the old names, you may see slightly different names on your next export.
 
