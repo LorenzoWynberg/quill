@@ -37,7 +37,19 @@ export function mountEditor(root: HTMLElement, deps: EditorDeps): EditorHandle {
   exportBtn.textContent = 'Export';
   exportBtn.setAttribute('aria-label', 'Export note as Markdown');
   exportBtn.disabled = true;
-  header.append(exportBtn);
+  const notice = document.createElement('div');
+  notice.className = 'editor-archived';
+  notice.setAttribute('role', 'status');
+  notice.hidden = true;
+  const noticeText = document.createElement('span');
+  noticeText.textContent = 'This note is archived.';
+  const restoreBtn = document.createElement('button');
+  restoreBtn.type = 'button';
+  restoreBtn.className = 'editor-restore';
+  restoreBtn.textContent = 'Restore';
+  restoreBtn.setAttribute('aria-label', 'Restore note from archive');
+  notice.append(noticeText, restoreBtn);
+  header.append(notice, exportBtn);
 
   const tagField = document.createElement('div');
   tagField.className = 'tag-field';
@@ -105,6 +117,16 @@ export function mountEditor(root: HTMLElement, deps: EditorDeps): EditorHandle {
     return store.getState().notes.find((n) => n.id === id)?.body ?? '';
   }
 
+  function isArchived(): boolean {
+    if (currentId === null) return false;
+    const note = store.getState().notes.find((n) => n.id === currentId);
+    return note?.archivedAt !== undefined;
+  }
+
+  function renderArchived(): void {
+    notice.hidden = !isArchived();
+  }
+
   function show(): void {
     const has = currentId !== null;
     empty.hidden = has;
@@ -113,6 +135,7 @@ export function mountEditor(root: HTMLElement, deps: EditorDeps): EditorHandle {
     exportBtn.disabled = !has;
     tagField.hidden = !has;
     renderChips();
+    renderArchived();
     previewEl.innerHTML = has ? render(textarea.value) : '';
   }
 
@@ -255,6 +278,12 @@ export function mountEditor(root: HTMLElement, deps: EditorDeps): EditorHandle {
     if (note) exportNote(note);
   });
 
+  restoreBtn.addEventListener('click', () => {
+    if (currentId === null) return;
+    store.setArchived(currentId, false);
+    textarea.focus();
+  });
+
   textarea.addEventListener('input', () => {
     previewEl.innerHTML = render(textarea.value);
     if (!pending) {
@@ -293,6 +322,7 @@ export function mountEditor(root: HTMLElement, deps: EditorDeps): EditorHandle {
       msg.textContent = '';
     }
     renderChips();
+    renderArchived();
   });
 
   document.addEventListener('visibilitychange', () => {
