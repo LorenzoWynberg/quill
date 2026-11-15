@@ -547,4 +547,153 @@ describe('note list', () => {
       expect(rules.join('')).not.toMatch(/#[0-9a-f]{3,6}\b|rgb|hsl|oklch/i);
     });
   });
+  describe('tag filter', () => {
+    function seed() {
+      const store = createNotesStore(mem());
+      const a = store.create();
+      store.update(a.id, '# Alpha');
+      store.setTags(a.id, ['Work']);
+      const b = store.create();
+      store.update(b.id, '# Beta');
+      store.setTags(b.id, ['work', 'home']);
+      const c = store.create();
+      store.update(c.id, '# Gamma');
+      return { store, a, b, c };
+    }
+    const select = () =>
+      root.querySelector<HTMLSelectElement>('.notes-tag-select')!;
+    const clear = () =>
+      root.querySelector<HTMLButtonElement>('.notes-tag-clear')!;
+    const items = () =>
+      [...root.querySelectorAll('li .notes-item')].map((e) => e.textContent);
+    const pick = (v: string) => {
+      select().value = v;
+      select().dispatchEvent(new Event('change', { bubbles: true }));
+    };
+
+    it('lists All tags then distinct tags case-insensitively; hidden with no tags', () => {
+      const empty = createNotesStore(mem());
+      empty.create();
+      mountNoteList(root, empty);
+      expect(root.querySelector<HTMLElement>('.notes-tag-filter')?.hidden).toBe(
+        true,
+      );
+      root.replaceChildren();
+      const { store } = seed();
+      mountNoteList(root, store);
+      const opts = [...select().options].map((o) => [o.value, o.textContent]);
+      expect(opts).toHaveLength(3);
+      expect(opts[0]).toEqual(['', 'All tags']);
+      expect(opts.slice(1).map((o) => o[1])).toEqual(['home', 'work']);
+    });
+
+    it('keeps the select on the canonical spelling when the first spelling goes away', () => {
+      const { store, b } = seed();
+      mountNoteList(root, store);
+      pick('work');
+      store.setTags(b.id, []);
+      expect(select().value).toBe('Work');
+      expect(items()).toEqual(['Alpha']);
+    });
+
+    it('lists starred notes first, each group by updatedAt descending', () => {
+      const { store, a, b } = seed();
+      store.setStarred(a.id, true);
+      mountNoteList(root, store);
+      pick([...select().options][2]!.value);
+      expect(items()).toEqual(['Alpha', 'Beta']);
+      store.setStarred(a.id, false);
+      store.setStarred(b.id, true);
+      expect(items()).toEqual(['Beta', 'Alpha']);
+    });
+
+    it('keeps focus on the select after a store change', () => {
+      const { store, c } = seed();
+      mountNoteList(root, store);
+      select().focus();
+      store.setTags(c.id, ['misc']);
+      expect(document.activeElement).toBe(select());
+    });
+
+    it('filters, composes with search, clears, and keeps focus', () => {
+      const { store } = seed();
+      mountNoteList(root, store);
+      expect(clear().hidden).toBe(true);
+      select().focus();
+      pick('work');
+      expect(items().sort()).toEqual(['Alpha', 'Beta']);
+      expect(clear().type).toBe('button');
+      expect(clear().hidden).toBe(false);
+      expect(document.activeElement).toBe(select());
+      const search = root.querySelector<HTMLInputElement>(
+        '.notes-search-input',
+      )!;
+      search.value = 'beta';
+      search.dispatchEvent(new Event('input', { bubbles: true }));
+      expect(items()).toEqual(['Beta']);
+      search.value = 'gamma';
+      search.dispatchEvent(new Event('input', { bubbles: true }));
+      expect(root.textContent).toContain(
+        'No notes tagged "work" match "gamma"',
+      );
+      expect(clear().hidden).toBe(false);
+      search.value = '';
+      search.dispatchEvent(new Event('input', { bubbles: true }));
+      clear().click();
+      expect(items()).toHaveLength(3);
+      expect(select().value).toBe('');
+      expect(document.activeElement).toBe(select());
+    });
+
+    it('shows a tag-only empty state, Escape clears, and a stale tag resets', () => {
+      const { store, a, b } = seed();
+      mountNoteList(root, store);
+      pick('home');
+      store.setTags(b.id, []);
+      expect(select().value).toBe('');
+      expect(items()).toHaveLength(3);
+      store.setTags(a.id, ['Work']);
+      pick('work');
+      select().dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+      );
+      expect(select().value).toBe('');
+      expect(items()).toHaveLength(3);
+    });
+
+    it('keeps selection, is not persisted, and New note clears it', () => {
+      const storage = mem();
+      const store = createNotesStore(storage);
+      const a = store.create();
+      store.update(a.id, '# Alpha');
+      store.setTags(a.id, ['home']);
+      const c = store.create();
+      store.update(c.id, '# Gamma');
+      store.select(c.id);
+      mountNoteList(root, store);
+      const setItem = vi.spyOn(storage, 'setItem');
+      pick('home');
+      expect(store.getState().selectedId).toBe(c.id);
+      expect(root.querySelector('[aria-current="true"]')).toBeNull();
+      expect(setItem).not.toHaveBeenCalled();
+      const second = document.createElement('nav');
+      document.body.append(second);
+      mountNoteList(second, store);
+      expect(second.querySelector<HTMLSelectElement>('select')!.value).toBe('');
+      expect(second.querySelectorAll('li .notes-item')).toHaveLength(2);
+      second.remove();
+      root.querySelector<HTMLButtonElement>('.notes-new')?.click();
+      expect(select().value).toBe('');
+      expect(items()).toContain('Untitled');
+    });
+
+    it('styles both controls with focus rings and theme tokens only', () => {
+      const css = readFileSync('src/notes/list.css', 'utf8');
+      const rules = css.match(/\.notes-tag-[^{]*\{[^}]*\}/g) ?? [];
+      const joined = rules.join('');
+      expect(joined).toContain('.notes-tag-select:focus-visible');
+      expect(joined).toContain('.notes-tag-clear:focus-visible');
+      expect(joined).not.toMatch(/#[0-9a-f]{3,6}\b|rgb|hsl|oklch/i);
+    });
+  });
 });

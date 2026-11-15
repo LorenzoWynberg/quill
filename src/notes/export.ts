@@ -3,6 +3,33 @@ import { deriveTitle } from './title';
 import type { Note } from './store';
 
 const MAX_BASE = 80;
+
+const YAML_ESCAPES: Record<string, string> = {
+  '\\': '\\\\',
+  '"': '\\"',
+  '\n': '\\n',
+  '\r': '\\r',
+  '\t': '\\t',
+  '\u2028': '\\u2028',
+  '\u2029': '\\u2029',
+};
+
+function escapeYamlTag(t: string): string {
+  return t.replace(/[\\"\p{Cc}\u2028\u2029]/gu, (ch) => {
+    const known = YAML_ESCAPES[ch];
+    if (known !== undefined) return known;
+    return `\\x${(ch.codePointAt(0) ?? 0).toString(16).toUpperCase().padStart(2, '0')}`;
+  });
+}
+
+type Exportable = Pick<Note, 'body'> & { tags?: readonly string[] };
+
+export function noteMarkdown(note: Exportable): string {
+  const tags = note.tags ?? [];
+  if (tags.length === 0) return note.body;
+  const lines = tags.map((t) => `  - "${escapeYamlTag(t)}"\n`);
+  return `---\ntags:\n${lines.join('')}---\n${note.body}`;
+}
 const ILLEGAL = '/\\:*?"<>|';
 
 export function noteFilename(note: Pick<Note, 'body'>): string {
@@ -47,13 +74,11 @@ export function zipFilename(date: Date = new Date()): string {
   return `quill-notes-${y}-${m}-${d}.zip`;
 }
 
-export function buildNotesZip(
-  notes: readonly Pick<Note, 'body'>[],
-): Uint8Array {
+export function buildNotesZip(notes: readonly Exportable[]): Uint8Array {
   const names = uniqueFilenames(notes);
   const files: Record<string, Uint8Array> = {};
   notes.forEach((note, i) => {
-    files[names[i] as string] = strToU8(note.body);
+    files[names[i] as string] = strToU8(noteMarkdown(note));
   });
   return zipSync(files);
 }
@@ -70,14 +95,14 @@ export function downloadBlob(blob: Blob, filename: string): void {
   URL.revokeObjectURL(url);
 }
 
-export function exportNote(note: Pick<Note, 'body'>): void {
+export function exportNote(note: Exportable): void {
   downloadBlob(
-    new Blob([note.body], { type: 'text/markdown;charset=utf-8' }),
+    new Blob([noteMarkdown(note)], { type: 'text/markdown;charset=utf-8' }),
     noteFilename(note),
   );
 }
 
-export function exportAllNotes(notes: readonly Pick<Note, 'body'>[]): void {
+export function exportAllNotes(notes: readonly Exportable[]): void {
   if (notes.length === 0) return;
   const bytes = buildNotesZip(notes);
   downloadBlob(

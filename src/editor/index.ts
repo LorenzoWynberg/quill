@@ -1,4 +1,4 @@
-import { exportNote } from '../notes';
+import { exportNote, normaliseTag, normaliseTags } from '../notes';
 import type { NotesStore } from '../notes';
 
 export interface EditorDeps {
@@ -39,7 +39,28 @@ export function mountEditor(root: HTMLElement, deps: EditorDeps): EditorHandle {
   exportBtn.disabled = true;
   header.append(exportBtn);
 
-  root.replaceChildren(header, empty, label, textarea);
+  const tagField = document.createElement('div');
+  tagField.className = 'tag-field';
+  tagField.setAttribute('role', 'group');
+  tagField.setAttribute('aria-labelledby', 'tag-field-label');
+  const tagLabel = document.createElement('span');
+  tagLabel.id = 'tag-field-label';
+  tagLabel.className = 'tag-field-label';
+  tagLabel.textContent = 'Tags';
+  const chips = document.createElement('ul');
+  chips.className = 'tag-chips';
+  const tagInput = document.createElement('input');
+  tagInput.type = 'text';
+  tagInput.id = 'tag-input';
+  tagInput.setAttribute('aria-label', 'Add tag');
+  tagInput.setAttribute('aria-describedby', 'tag-msg');
+  const msg = document.createElement('div');
+  msg.id = 'tag-msg';
+  msg.className = 'tag-msg';
+  msg.setAttribute('aria-live', 'polite');
+  tagField.append(tagLabel, chips, tagInput, msg);
+
+  root.replaceChildren(header, empty, label, textarea, tagField);
 
   const main = root.parentElement;
   let showEditPane = (): void => {};
@@ -90,8 +111,124 @@ export function mountEditor(root: HTMLElement, deps: EditorDeps): EditorHandle {
     textarea.hidden = !has;
     label.hidden = !has;
     exportBtn.disabled = !has;
+    tagField.hidden = !has;
+    renderChips();
     previewEl.innerHTML = has ? render(textarea.value) : '';
   }
+
+  function tagsOf(id: string | null): readonly string[] {
+    if (id === null) return [];
+    return store.getState().notes.find((n) => n.id === id)?.tags ?? [];
+  }
+
+  function renderChips(): void {
+    const items = tagsOf(currentId).map((tag) => {
+      const li = document.createElement('li');
+      li.className = 'tag-chip';
+      const text = document.createElement('span');
+      text.textContent = tag;
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'tag-remove';
+      btn.textContent = 'Remove';
+      btn.setAttribute('aria-label', `Remove tag "${tag}"`);
+      btn.addEventListener('click', () => {
+        removePressed = false;
+        removeTag(tag);
+      });
+      li.append(text, btn);
+      return li;
+    });
+    chips.replaceChildren(...items);
+  }
+
+  let tagSaveFailed = false;
+  let removePressed = false;
+
+  function removeTag(tag: string): void {
+    if (currentId === null) return;
+    const tags = tagsOf(currentId);
+    const idx = tags.indexOf(tag);
+    store.setTags(
+      currentId,
+      tags.filter((t) => t !== tag),
+    );
+    const btns = chips.querySelectorAll<HTMLButtonElement>('.tag-remove');
+    (btns[idx] ?? tagInput).focus();
+  }
+
+  // Splits on commas; entries are validated by the notes domain. With
+  // final=false the text after the last comma stays in the input. Valid
+  // parts always commit; rejected parts stay in the input.
+  function commitTags(raw: string, final: boolean): void {
+    if (currentId === null) return;
+    const parts = raw.split(',');
+    const remainder = final ? '' : (parts.pop() ?? '');
+    const valid: string[] = [];
+    const rejected: string[] = [];
+    for (const part of parts) {
+      const tag = normaliseTag(part);
+      if (tag !== null) valid.push(tag);
+      else if (/\S/.test(part)) rejected.push(part.trim());
+    }
+    const current = tagsOf(currentId);
+    const next = normaliseTags([...current, ...valid]);
+    const duplicate = next.length < current.length + valid.length;
+    if (next.length > current.length) {
+      store.setTags(currentId, next);
+      if (store.getState().writeError !== null) {
+        store.setTags(currentId, current);
+        tagInput.value = raw;
+        tagSaveFailed = true;
+        msg.textContent = 'Tag not saved: storage is unavailable or full.';
+        return;
+      }
+    }
+    tagInput.value = [...rejected, remainder].filter((x) => x !== '').join(',');
+    if (rejected.length > 0)
+      msg.textContent = 'Tags can be up to 32 characters.';
+    else msg.textContent = duplicate ? 'Already tagged.' : '';
+  }
+
+  // Pressing Remove blurs the input; committing then would re-render the
+  // chips under the pointer and swallow the click.
+  const pressRemove = (ev: Event): void => {
+    if ((ev.target as Element).closest('.tag-remove')) removePressed = true;
+  };
+  chips.addEventListener('pointerdown', pressRemove);
+  chips.addEventListener('mousedown', (ev) => {
+    pressRemove(ev);
+    if ((ev.target as Element).closest('.tag-remove')) ev.preventDefault();
+  });
+  for (const type of ['pointerup', 'pointercancel', 'mouseup'])
+    document.addEventListener(type, () => {
+      removePressed = false;
+    });
+
+  tagInput.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Enter') {
+      ev.preventDefault();
+      commitTags(tagInput.value, true);
+      return;
+    }
+    msg.textContent = '';
+    if (ev.key === 'Backspace' && tagInput.value === '' && currentId !== null) {
+      const tags = tagsOf(currentId);
+      if (tags.length > 0) store.setTags(currentId, tags.slice(0, -1));
+    }
+  });
+  tagInput.addEventListener('input', (ev) => {
+    msg.textContent = '';
+    if (!tagInput.value.includes(',')) return;
+    // Typed commas keep the text after them in the input; a paste or other
+    // bulk insertion commits every part.
+    const typed = (ev as InputEvent).inputType === 'insertText';
+    commitTags(tagInput.value, !typed);
+  });
+  tagInput.addEventListener('blur', () => {
+    if (removePressed) return;
+    if (/\S/.test(tagInput.value)) commitTags(tagInput.value, true);
+  });
 
   function clearPending(): void {
     clearTimeout(timer);
@@ -135,6 +272,9 @@ export function mountEditor(root: HTMLElement, deps: EditorDeps): EditorHandle {
       if (pending && oldId !== null) store.update(oldId, textarea.value);
       clearPending();
       textarea.value = bodyOf(currentId);
+      tagInput.value = '';
+      msg.textContent = '';
+      tagSaveFailed = false;
       show();
     } else if (source === 'external' && !pending && currentId !== null) {
       const body = bodyOf(currentId);
@@ -148,6 +288,11 @@ export function mountEditor(root: HTMLElement, deps: EditorDeps): EditorHandle {
         show();
       }
     }
+    if (tagSaveFailed && state.writeError === null) {
+      tagSaveFailed = false;
+      msg.textContent = '';
+    }
+    renderChips();
   });
 
   document.addEventListener('visibilitychange', () => {

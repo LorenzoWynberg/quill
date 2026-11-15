@@ -4,6 +4,7 @@ import {
   buildNotesZip,
   downloadBlob,
   noteFilename,
+  noteMarkdown,
   uniqueFilenames,
   zipFilename,
 } from './export';
@@ -116,5 +117,43 @@ describe('starred notes', () => {
     const starred = { ...plain, starred: true };
     expect(noteFilename(starred)).toBe(noteFilename(plain));
     expect(buildNotesZip([starred])).toEqual(buildNotesZip([plain]));
+  });
+});
+
+describe('tags in markdown', () => {
+  it('escapes control characters so each tag stays on one line', () => {
+    const out = noteMarkdown({
+      body: 'B',
+      tags: ['a\nb\rc\td\u2028e\u2029f', 'g\u0000h\u007fi\u0085j'],
+    });
+    expect(out).toBe(
+      '---\ntags:\n  - "a\\nb\\rc\\td\\u2028e\\u2029f"\n  - "g\\x00h\\x7Fi\\x85j"\n---\nB',
+    );
+    expect(out.split('\n')).toHaveLength(6);
+  });
+
+  it('cannot forge a frontmatter delimiter through a tag', () => {
+    const out = noteMarkdown({ body: 'B', tags: ['x\n---\ny'] });
+    const lines = out.split('\n');
+    expect(lines.filter((l) => l === '---')).toHaveLength(2);
+  });
+
+  it('writes YAML frontmatter with escaped tags', () => {
+    expect(noteMarkdown({ body: '# Hi', tags: ['a', 'b"c\\d'] })).toBe(
+      '---\ntags:\n  - "a"\n  - "b\\"c\\\\d"\n---\n# Hi',
+    );
+  });
+
+  it('leaves untagged bodies untouched', () => {
+    expect(noteMarkdown({ body: 'x' })).toBe('x');
+    expect(noteMarkdown({ body: 'x', tags: [] })).toBe('x');
+  });
+
+  it('zips the frontmatter and keeps the title filename', () => {
+    const files = unzipSync(buildNotesZip([{ body: '# Hi', tags: ['t'] }]));
+    expect(Object.keys(files)).toEqual(['Hi.md']);
+    expect(strFromU8(files['Hi.md'] as Uint8Array)).toBe(
+      '---\ntags:\n  - "t"\n---\n# Hi',
+    );
   });
 });

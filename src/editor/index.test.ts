@@ -268,7 +268,7 @@ describe('editor', () => {
     const src = readFileSync('src/editor/index.ts', 'utf8');
     const imports = src.match(/^import .*$/gm) ?? [];
     expect(imports).toEqual([
-      "import { exportNote } from '../notes';",
+      "import { exportNote, normaliseTag, normaliseTags } from '../notes';",
       "import type { NotesStore } from '../notes';",
     ]);
   });
@@ -335,5 +335,234 @@ describe('editor', () => {
     });
     expect(store.importBackup(text)).toMatchObject({ ok: true, updated: 1 });
     expect(ta.value).toBe('restored');
+  });
+});
+
+describe('tag chip field', () => {
+  const input = (): HTMLInputElement =>
+    root.querySelector('#tag-input') as HTMLInputElement;
+  const msgText = (): string =>
+    root.querySelector('#tag-msg')?.textContent ?? '';
+  const chipTexts = (): string[] =>
+    [...root.querySelectorAll('.tag-chip > span')].map(
+      (e) => e.textContent ?? '',
+    );
+  const key = (k: string): KeyboardEvent => {
+    const ev = new KeyboardEvent('keydown', {
+      key: k,
+      bubbles: true,
+      cancelable: true,
+    });
+    input().dispatchEvent(ev);
+    return ev;
+  };
+  const typeTag = (v: string): void => type(input() as never, v);
+  const tagsOf = (id: string): readonly string[] =>
+    store.getState().notes.find((n) => n.id === id)?.tags ?? [];
+
+  it('renders a labelled group after the textarea with chips and input', () => {
+    const n = store.create();
+    store.setTags(n.id, ['a', 'b']);
+    const ta = mount();
+    const group = root.querySelector('[role="group"][aria-labelledby]');
+    expect(ta.nextElementSibling).toBe(group);
+    expect(
+      root.querySelector('#' + group?.getAttribute('aria-labelledby'))
+        ?.textContent,
+    ).toBe('Tags');
+    expect(chipTexts()).toEqual(['a', 'b']);
+    expect(input().getAttribute('aria-label')).toBe('Add tag');
+    expect(input().getAttribute('aria-describedby')).toBe('tag-msg');
+    const btn = root.querySelector('.tag-remove') as HTMLElement;
+    expect(btn.textContent).toBe('Remove');
+    expect(btn.getAttribute('aria-label')).toBe('Remove tag "a"');
+  });
+
+  it('commits on Enter without touching the textarea or preview', () => {
+    const n = store.create();
+    store.update(n.id, '# Hi');
+    const ta = mount();
+    const before = preview.innerHTML;
+    const spy = vi.spyOn(store, 'setTags');
+    typeTag('work');
+    const ev = key('Enter');
+    expect(ev.defaultPrevented).toBe(true);
+    expect(spy).toHaveBeenCalledWith(n.id, ['work']);
+    expect(chipTexts()).toEqual(['work']);
+    expect(input().value).toBe('');
+    expect(ta.value).toBe('# Hi');
+    expect(preview.innerHTML).toBe(before);
+  });
+
+  it('commits on comma, including pasted lists', () => {
+    const n = store.create();
+    mount();
+    typeTag('home,');
+    expect(tagsOf(n.id)).toEqual(['home']);
+    expect(input().value).toBe('');
+    typeTag('a, b');
+    expect(tagsOf(n.id)).toEqual(['home', 'a', 'b']);
+    expect(input().value).toBe('');
+  });
+
+  it('rejects a duplicate and announces it', () => {
+    const n = store.create();
+    store.setTags(n.id, ['work']);
+    mount();
+    typeTag(' Work ');
+    key('Enter');
+    expect(tagsOf(n.id)).toEqual(['work']);
+    expect(chipTexts()).toEqual(['work']);
+    expect(msgText()).toBe('Already tagged.');
+    key('x');
+    expect(msgText()).toBe('');
+  });
+
+  it('keeps over-long text and ignores whitespace', () => {
+    const n = store.create();
+    mount();
+    typeTag('x'.repeat(33));
+    key('Enter');
+    expect(tagsOf(n.id)).toEqual([]);
+    expect(input().value).toBe('x'.repeat(33));
+    expect(msgText()).toBe('Tags can be up to 32 characters.');
+    typeTag('   ');
+    key('Enter');
+    expect(tagsOf(n.id)).toEqual([]);
+    expect(msgText()).toBe('');
+  });
+
+  it('removes a chip pressed while text is pending without losing the click', () => {
+    const n = store.create();
+    store.setTags(n.id, ['a', 'b']);
+    mount();
+    typeTag('pending');
+    const spy = vi.spyOn(store, 'setTags');
+    const btn = root.querySelector('.tag-remove') as HTMLButtonElement;
+    btn.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+    const md = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
+    btn.dispatchEvent(md);
+    expect(md.defaultPrevented).toBe(true);
+    input().dispatchEvent(new Event('blur'));
+    expect(btn.isConnected).toBe(true);
+    btn.click();
+    expect(tagsOf(n.id)).toEqual(['b']);
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(input().value).toBe('pending');
+  });
+
+  it.each(['mouseup', 'pointercancel'])(
+    'commits pending text on blur after a Remove press ends with %s and no click',
+    (type) => {
+      const n = store.create();
+      store.setTags(n.id, ['a']);
+      mount();
+      typeTag('pending');
+      const btn = root.querySelector('.tag-remove') as HTMLButtonElement;
+      btn.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+      document.dispatchEvent(new Event(type));
+      input().dispatchEvent(new Event('blur'));
+      expect(tagsOf(n.id)).toEqual(['a', 'pending']);
+    },
+  );
+
+  it('keeps valid pasted parts and leaves the over-long one in the input', () => {
+    const n = store.create();
+    mount();
+    const long = 'x'.repeat(40);
+    typeTag('a, b, ' + long);
+    expect(tagsOf(n.id)).toEqual(['a', 'b']);
+    expect(input().value).toBe(long);
+    expect(msgText()).toBe('Tags can be up to 32 characters.');
+    key('x');
+    expect(msgText()).toBe('');
+  });
+
+  describe.each(['quota', 'unavailable'] as const)(
+    'failed write (%s)',
+    (kind) => {
+      it('reverts the chip, keeps the text and announces, then clears', () => {
+        const n = store.create();
+        mount();
+        const orig = storage.setItem.bind(storage);
+        let fail = true;
+        vi.spyOn(storage, 'setItem').mockImplementation((k, v) => {
+          if (fail) {
+            throw kind === 'quota'
+              ? new DOMException('full', 'QuotaExceededError')
+              : new Error('no');
+          }
+          orig(k, v);
+        });
+        typeTag('work');
+        key('Enter');
+        expect(store.getState().writeError).toBe(kind);
+        expect(tagsOf(n.id)).toEqual([]);
+        expect(chipTexts()).toEqual([]);
+        expect(input().value).toBe('work');
+        expect(msgText()).toBe(
+          'Tag not saved: storage is unavailable or full.',
+        );
+        fail = false;
+        store.update(n.id, 'body');
+        expect(msgText()).toBe('');
+      });
+    },
+  );
+
+  it('removes a chip and moves focus to the next Remove, else the input', () => {
+    const n = store.create();
+    store.setTags(n.id, ['a', 'b']);
+    mount();
+    (root.querySelectorAll('.tag-remove')[0] as HTMLElement).click();
+    expect(tagsOf(n.id)).toEqual(['b']);
+    expect(document.activeElement).toBe(root.querySelector('.tag-remove'));
+    (root.querySelector('.tag-remove') as HTMLElement).click();
+    expect(tagsOf(n.id)).toEqual([]);
+    expect(document.activeElement).toBe(input());
+  });
+
+  it('Backspace removes the last chip only on an empty input', () => {
+    const n = store.create();
+    store.setTags(n.id, ['a', 'b']);
+    mount();
+    typeTag('z');
+    key('Backspace');
+    expect(tagsOf(n.id)).toEqual(['a', 'b']);
+    typeTag('');
+    key('Backspace');
+    expect(tagsOf(n.id)).toEqual(['a']);
+  });
+
+  it('is hidden with no note and follows selection and external changes', () => {
+    mount();
+    const group = root.querySelector('.tag-field') as HTMLElement;
+    expect(group.hidden).toBe(true);
+    const a = store.create();
+    store.setTags(a.id, ['one']);
+    expect(group.hidden).toBe(false);
+    typeTag('draft');
+    const b = store.create();
+    expect(chipTexts()).toEqual([]);
+    expect(input().value).toBe('');
+    store.select(a.id);
+    expect(chipTexts()).toEqual(['one']);
+    store.setTags(a.id, ['one', 'two']);
+    expect(chipTexts()).toEqual(['one', 'two']);
+    expect(b.id).not.toBe(a.id);
+  });
+
+  it('commits typed text on blur', () => {
+    const n = store.create();
+    mount();
+    typeTag('later');
+    input().dispatchEvent(new Event('blur'));
+    expect(tagsOf(n.id)).toEqual(['later']);
+  });
+
+  it('styles focus with tokens and no colour literals', () => {
+    const css = readFileSync('src/editor/editor.css', 'utf8');
+    expect(css).toMatch(/\.tag-field[^{]*:focus-visible/);
+    expect(css).not.toMatch(/#[0-9a-f]{3,8}\b|rgb\(|oklch\(/i);
   });
 });
