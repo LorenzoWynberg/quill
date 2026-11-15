@@ -2,7 +2,34 @@ import { deriveTitle } from './title';
 import { matchesQuery } from './search';
 import { sameTag } from './tags';
 import { exportAllNotes } from './export';
-import type { ImportResult, NotesStore } from './store';
+import type { ImportResult, Note, NotesStore } from './store';
+
+const TOAST_MS = 5000;
+let mountSeq = 0;
+
+const plural = (n: number): string => `${n} ${n === 1 ? 'note' : 'notes'}`;
+
+/**
+ * The ids an archive change would actually move: in `ids` order, without
+ * duplicates, keeping only notes that exist and are not already in the target
+ * state.
+ */
+export function changedArchiveIds(
+  notes: readonly Note[],
+  ids: readonly string[],
+  archived: boolean,
+): string[] {
+  const byId = new Map(notes.map((n) => [n.id, n]));
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const id of ids) {
+    if (seen.has(id)) continue;
+    seen.add(id);
+    const note = byId.get(id);
+    if (note && (note.archivedAt !== undefined) !== archived) out.push(id);
+  }
+  return out;
+}
 
 const MESSAGES = {
   quota: 'Storage is full. Recent changes are not being saved.',
@@ -95,6 +122,168 @@ export function mountNoteList(
   let view: 'notes' | 'archived' = 'notes';
   let pendingFocus: string | undefined;
   const viewHost = document.createElement('div');
+  viewHost.className = 'notes-view-row';
+  const idPrefix = `notes-select-${++mountSeq}-`;
+
+  // Select mode and its selection live only in this closure, never in storage.
+  let selectMode = false;
+  const selected = new Set<string>();
+  let anchor: string | undefined;
+  let visibleIds: string[] = [];
+  function clearSelection(): void {
+    selected.clear();
+    anchor = undefined;
+  }
+  function exitSelect(): void {
+    selectMode = false;
+    clearSelection();
+  }
+  function rangeTo(id: string): void {
+    const from = anchor === undefined ? -1 : visibleIds.indexOf(anchor);
+    const to = visibleIds.indexOf(id);
+    if (from === -1 || to === -1) {
+      if (selected.has(id)) selected.delete(id);
+      else selected.add(id);
+    } else {
+      const rows = visibleIds.slice(Math.min(from, to), Math.max(from, to) + 1);
+      for (const v of rows) selected.add(v);
+    }
+  }
+  function acted(id: string): void {
+    anchor = id;
+    pendingFocus = `select:${id}`;
+    render();
+  }
+  function announce(text: string): void {
+    live.textContent = '';
+    live.textContent = text;
+  }
+  const archivedTotal = (): number =>
+    store.getState().notes.filter((n) => n.archivedAt !== undefined).length;
+
+  // The bulk action bar is built once; render() only updates and shows it.
+  const bar = document.createElement('div');
+  bar.className = 'notes-bulk-bar';
+  bar.hidden = true;
+  const count = document.createElement('span');
+  count.className = 'notes-bulk-count';
+  count.setAttribute('aria-live', 'polite');
+  const barButton = (key: string, label: string): HTMLButtonElement => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'notes-bulk-button';
+    b.dataset.focus = key;
+    b.textContent = label;
+    return b;
+  };
+  const selectAll = barButton('bulk-select-all', 'Select all');
+  const bulkAction = barButton('bulk-action', 'Archive');
+  const cancel = barButton('bulk-cancel', 'Cancel');
+  bar.append(count, selectAll, bulkAction, cancel);
+  selectAll.addEventListener('click', () => {
+    for (const id of visibleIds) selected.add(id);
+    render();
+  });
+  cancel.addEventListener('click', () => {
+    exitSelect();
+    pendingFocus = 'select-mode';
+    render();
+  });
+  bulkAction.addEventListener('click', () => {
+    const archiving = view === 'notes';
+    const ids = visibleIds.filter((id) => selected.has(id));
+    const changed = changedArchiveIds(store.getState().notes, ids, archiving);
+    if (changed.length > 0) {
+      const moved = new Set(changed);
+      const first = visibleIds.find((id) => !moved.has(id));
+      pendingFocus = first ? `select:${first}` : 'bulk-cancel';
+    }
+    clearSelection();
+    store.setArchivedMany(ids, archiving);
+    // A batch that changes nothing notifies nobody: keep no focus intent and
+    // re-render ourselves so the cleared selection shows.
+    pendingFocus = undefined;
+    if (changed.length === 0) {
+      render();
+      return;
+    }
+    announce(
+      `${archiving ? 'Archived' : 'Restored'} ${plural(changed.length)}. Archived (${archivedTotal()}).`,
+    );
+    showToast(changed, archiving);
+  });
+
+  // The toast is visual only (not a live region): every batch is announced
+  // once, through `live`. It is built once and survives every render.
+  const toast = document.createElement('div');
+  toast.className = 'notes-toast';
+  toast.hidden = true;
+  const toastText = document.createElement('span');
+  toastText.className = 'notes-toast-text';
+  const undo = document.createElement('button');
+  undo.type = 'button';
+  undo.className = 'notes-toast-undo';
+  undo.dataset.focus = 'toast-undo';
+  undo.textContent = 'Undo';
+  let toastIds: string[] = [];
+  let toastArchived = true;
+  let toastTimer: ReturnType<typeof setTimeout> | undefined;
+  function stopTimer(): void {
+    if (toastTimer !== undefined) clearTimeout(toastTimer);
+    toastTimer = undefined;
+  }
+  function startTimer(): void {
+    stopTimer();
+    toastTimer = setTimeout(hideToast, TOAST_MS);
+  }
+  function hideToast(): void {
+    stopTimer();
+    toast.hidden = true;
+  }
+  function showToast(ids: string[], archived: boolean): void {
+    toastIds = ids;
+    toastArchived = archived;
+    toastText.textContent = `${plural(ids.length)} ${archived ? 'archived' : 'restored'}`;
+    if (toast.firstChild !== toastText) toast.replaceChildren(toastText, undo);
+    toast.hidden = false;
+    startTimer();
+  }
+  toast.addEventListener('focusin', stopTimer);
+  toast.addEventListener('focusout', (e) => {
+    const next = e.relatedTarget;
+    if (toast.hidden || (next instanceof Node && toast.contains(next))) return;
+    startTimer();
+  });
+  undo.addEventListener('click', () => {
+    const archived = !toastArchived;
+    const eff = changedArchiveIds(store.getState().notes, toastIds, archived);
+    if (eff.length > 0) pendingFocus = `view:${view}`;
+    store.setArchivedMany(toastIds, archived);
+    pendingFocus = undefined;
+    const hadFocus = toast.contains(document.activeElement);
+    hideToast();
+    if (eff.length > 0) {
+      announce(
+        `Undid ${toastArchived ? 'archive' : 'restore'} of ${plural(eff.length)}. Archived (${archivedTotal()}).`,
+      );
+    } else if (hadFocus) {
+      // Nothing changed, so nothing re-rendered: don't leave focus inside the
+      // now-hidden toast.
+      viewHost
+        .querySelector<HTMLElement>(`[data-focus="view:${view}"]`)
+        ?.focus();
+    }
+  });
+
+  const onRootKeydown = (e: KeyboardEvent): void => {
+    // The search box and tag filter clear themselves on Esc first and call
+    // preventDefault; they keep priority.
+    if (!selectMode || e.key !== 'Escape' || e.defaultPrevented) return;
+    exitSelect();
+    pendingFocus = 'select-mode';
+    render();
+  };
+  root.addEventListener('keydown', onRootKeydown);
 
   const searchRegion = document.createElement('div');
   searchRegion.className = 'notes-search';
@@ -173,6 +362,8 @@ export function mountNoteList(
     viewHost,
     searchRegion,
     statusHost,
+    bar,
+    toast,
     listHost,
   );
 
@@ -226,6 +417,7 @@ export function mountNoteList(
       action('new', 'New note', 'notes-new', () => {
         clearQuery();
         clearTag();
+        exitSelect();
         view = 'notes';
         store.create();
       }),
@@ -265,6 +457,7 @@ export function mountNoteList(
       b.setAttribute('aria-pressed', String(view === key));
       b.addEventListener('click', () => {
         view = key;
+        clearSelection();
         render();
       });
       return b;
@@ -273,7 +466,22 @@ export function mountNoteList(
       toggle('notes', 'Notes'),
       toggle('archived', `Archived (${archivedCount})`),
     );
-    viewHost.replaceChildren(group);
+    const selectToggle = document.createElement('button');
+    selectToggle.type = 'button';
+    selectToggle.className = 'notes-select-toggle';
+    selectToggle.dataset.focus = 'select-mode';
+    selectToggle.textContent = 'Select';
+    selectToggle.setAttribute('aria-pressed', String(selectMode));
+    // While on, it stays usable as the way out even if the view empties.
+    selectToggle.disabled = viewNotes.length === 0 && !selectMode;
+    selectToggle.addEventListener('click', () => {
+      if (selectMode) {
+        exitSelect();
+        pendingFocus = 'select-mode';
+      } else selectMode = true;
+      render();
+    });
+    viewHost.replaceChildren(group, selectToggle);
 
     if (notes.length === 0 && query !== '') clearQuery();
     searchRegion.hidden = viewNotes.length === 0;
@@ -305,6 +513,16 @@ export function mountNoteList(
         matchesQuery(n.body, query) &&
         (activeTag === '' || n.tags.some((t) => sameTag(t, activeTag))),
     );
+    // The selection is always a subset of the rows on screen.
+    visibleIds = visible.map((n) => n.id);
+    const shown = new Set(visibleIds);
+    for (const id of selected) if (!shown.has(id)) selected.delete(id);
+    if (anchor !== undefined && !shown.has(anchor)) anchor = undefined;
+    bar.hidden = !selectMode;
+    const counted = `${selected.size} selected`;
+    if (count.textContent !== counted) count.textContent = counted;
+    bulkAction.textContent = view === 'notes' ? 'Archive' : 'Restore';
+    bulkAction.disabled = selected.size === 0;
     const frag = document.createDocumentFragment();
 
     if (viewNotes.length === 0) {
@@ -332,6 +550,12 @@ export function mountNoteList(
       for (const note of visible) {
         const title = deriveTitle(note.body);
         const li = document.createElement('li');
+        if (selectMode) {
+          li.append(...selectRow(note.id, title));
+          if (note.id === selectedId) li.setAttribute('aria-current', 'true');
+          ul.append(li);
+          continue;
+        }
         const open = document.createElement('button');
         open.type = 'button';
         open.className = 'notes-item';
@@ -416,15 +640,68 @@ export function mountNoteList(
         ...actionsHost.querySelectorAll<HTMLElement>('[data-focus]'),
         ...viewHost.querySelectorAll<HTMLElement>('[data-focus]'),
         ...filterRow.querySelectorAll<HTMLElement>('[data-focus]'),
+        ...bar.querySelectorAll<HTMLElement>('[data-focus]'),
+        ...toast.querySelectorAll<HTMLElement>('[data-focus]'),
         ...listHost.querySelectorAll<HTMLElement>('[data-focus]'),
       ];
+      // A control that is now disabled can't hold focus, so it counts as gone.
       (
-        all.find((el) => el.dataset.focus === focusKey) ??
-        actionsHost.querySelector<HTMLElement>('[data-focus="new"]')
+        all.find(
+          (el) =>
+            el.dataset.focus === focusKey &&
+            !(el instanceof HTMLButtonElement && el.disabled),
+        ) ?? actionsHost.querySelector<HTMLElement>('[data-focus="new"]')
       )?.focus();
     }
   }
 
+  function selectRow(id: string, title: string): HTMLElement[] {
+    const box = document.createElement('input');
+    box.type = 'checkbox';
+    box.className = 'notes-select';
+    box.id = `${idPrefix}${id}`;
+    box.dataset.focus = `select:${id}`;
+    box.checked = selected.has(id);
+    const label = document.createElement('label');
+    label.className = 'notes-select-label';
+    label.htmlFor = box.id;
+    label.textContent = title;
+    // Mouse, label click and native Space all arrive here as a click, after
+    // the browser has flipped `checked`.
+    box.addEventListener('click', (e) => {
+      if (e.shiftKey && anchor !== undefined) rangeTo(id);
+      else if (box.checked) selected.add(id);
+      else selected.delete(id);
+      acted(id);
+    });
+    // Shift+Space: take the range ourselves and stop the native toggle, which
+    // would otherwise flip the focused row back.
+    box.addEventListener('keydown', (e) => {
+      if (e.key !== ' ' || !e.shiftKey) return;
+      e.preventDefault();
+      if (e.repeat) return;
+      rangeTo(id);
+      acted(id);
+    });
+    label.addEventListener('mousedown', (e) => {
+      if (e.shiftKey) e.preventDefault(); // no text selection on shift-click
+    });
+    label.addEventListener('click', (e) => {
+      if (!e.shiftKey) return;
+      // Handle the range here rather than relying on the browser to forward
+      // the modifier to the checkbox's synthetic click.
+      e.preventDefault();
+      rangeTo(id);
+      acted(id);
+    });
+    return [box, label];
+  }
+
   render();
-  return store.subscribe(render);
+  const unsubscribe = store.subscribe(render);
+  return () => {
+    stopTimer();
+    root.removeEventListener('keydown', onRootKeydown);
+    unsubscribe();
+  };
 }
