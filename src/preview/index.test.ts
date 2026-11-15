@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { renderMarkdown } from './index';
+import { markdownToPlainText, renderMarkdown } from './index';
 
 const dom = (md: string) => {
   const el = document.createElement('div');
@@ -83,5 +83,11 @@ describe('dependencies', () => {
     expect(names).not.toContain('dompurify');
     expect(names).not.toContain('sanitize-html');
     expect(names.filter((n) => n.startsWith('markdown-it-'))).toEqual([]);
+  });
+});
+
+describe('markdownToPlainText', () => {
+  it('drops syntax, keeps text and separates blocks', () => {
+    expect(markdownToPlainText('# A\n\n**b** [c](http://x)')).toBe('A b c');
   });
 });

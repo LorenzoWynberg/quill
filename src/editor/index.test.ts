@@ -264,12 +264,13 @@ describe('editor', () => {
     expect(prev?.getAttribute('aria-pressed')).toBe('false');
   });
 
-  it('imports only exportNote and types from ../notes, nothing from ../preview', () => {
+  it('imports only exportNote and types from ../notes, plus the plain-text and count helpers', () => {
     const src = readFileSync('src/editor/index.ts', 'utf8');
     const imports = src.match(/^import .*$/gm) ?? [];
     expect(imports).toEqual([
       "import { exportNote } from '../notes';",
       "import type { NotesStore } from '../notes';",
+      "import { formatCount } from './count';",
     ]);
   });
 
@@ -335,5 +336,33 @@ describe('editor', () => {
     });
     expect(store.importBackup(text)).toMatchObject({ ok: true, updated: 1 });
     expect(ta.value).toBe('restored');
+  });
+
+  it('shows a live count, updates on input and hides with no note', () => {
+    store.create();
+    const ta = mount();
+    const c = root.querySelector('#editor-count') as HTMLElement;
+    expect(ta.getAttribute('aria-describedby')).toBe('editor-count');
+    expect(c.textContent).toBe('0 words \u00b7 0 characters');
+    type(ta, 'Hi **you**');
+    expect(c.textContent).toBe('2 words \u00b7 10 characters');
+    store.remove(store.getState().selectedId as string);
+    expect(c.hidden).toBe(true);
+    expect(c.textContent).toBe('');
+  });
+
+  it('updates the count when another note is selected', () => {
+    const a = store.create();
+    store.update(a.id, 'one two three');
+    const b = store.create();
+    store.update(b.id, 'x');
+    const ta = mount();
+    const c = root.querySelector('#editor-count') as HTMLElement;
+    expect(ta.nextElementSibling).toBe(c);
+    expect(c.textContent).toBe('1 word · 1 character');
+    store.select(a.id);
+    expect(c.textContent).toBe('3 words · 13 characters');
+    expect(c.hasAttribute('aria-live')).toBe(false);
+    expect(c.hasAttribute('role')).toBe(false);
   });
 });
