@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { mountNoteList } from './list';
+import { changedArchiveIds, mountNoteList } from './list';
 import * as exportModule from './export';
 import { createNotesStore } from './store';
+import type { Note, NotesState, NotesStore } from './store';
 
 function mem(): Storage {
   const m = new Map<string, string>();
@@ -1025,5 +1026,883 @@ describe('archived views', () => {
     const css = readFileSync('src/notes/list.css', 'utf8');
     expect(css).toContain('.notes-view:focus-visible');
     expect(css).not.toMatch(/#[0-9a-f]{3,8}\b|rgb\(|hsl\(|oklch\(/i);
+  });
+});
+
+describe('changedArchiveIds', () => {
+  const note = (id: string, archivedAt?: number): Note => ({
+    id,
+    body: id,
+    createdAt: 1,
+    updatedAt: 1,
+    tags: [],
+    ...(archivedAt ? { archivedAt } : {}),
+  });
+  const notes = [note('a'), note('b', 5), note('c'), note('d', 7)];
+
+  it('keeps existing notes not yet in the target state, in input order, once', () => {
+    expect(
+      changedArchiveIds(notes, ['c', 'x', 'b', 'a', 'c', 'a'], true),
+    ).toEqual(['c', 'a']);
+    expect(changedArchiveIds(notes, ['d', 'a', 'b', 'zz', 'd'], false)).toEqual(
+      ['d', 'b'],
+    );
+    expect(changedArchiveIds(notes, [], true)).toEqual([]);
+  });
+});
+
+describe('select mode', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** Notes listed top to bottom in the order given. */
+  function seed(titles: string[], storage: Storage = mem()) {
+    const store = createNotesStore(storage);
+    const ids: Record<string, string> = {};
+    for (const t of [...titles].reverse()) {
+      const n = store.create();
+      store.update(n.id, `# ${t}`);
+      ids[t] = n.id;
+    }
+    return { store, storage, ids };
+  }
+  const five = ['One', 'Two', 'Three', 'Four', 'Five'];
+  const btn = (label: string) =>
+    [...root.querySelectorAll<HTMLButtonElement>('button')].find(
+      (b) => b.textContent === label,
+    )!;
+  const toggle = () =>
+    root.querySelector<HTMLButtonElement>('.notes-select-toggle')!;
+  const bar = () => root.querySelector<HTMLElement>('.notes-bulk-bar')!;
+  const bulk = () =>
+    root.querySelector<HTMLButtonElement>('[data-focus="bulk-action"]')!;
+  const cancel = () =>
+    root.querySelector<HTMLButtonElement>('[data-focus="bulk-cancel"]')!;
+  const countText = () =>
+    root.querySelector('.notes-bulk-count')?.textContent ?? '';
+  const toast = () => root.querySelector<HTMLElement>('.notes-toast')!;
+  const undo = () => toast().querySelector<HTMLButtonElement>('button')!;
+  const live = () => root.querySelector<HTMLElement>('.notes-live')!;
+  const labelFor = (b: HTMLInputElement) =>
+    root.querySelector(`label[for="${b.id}"]`)?.textContent;
+  const boxes = () => [
+    ...root.querySelectorAll<HTMLInputElement>('li .notes-select'),
+  ];
+  const rows = () => boxes().map(labelFor);
+  const ticked = () =>
+    boxes()
+      .filter((b) => b.checked)
+      .map(labelFor);
+  const box = (t: string) => boxes().find((b) => labelFor(b) === t)!;
+  const label = (t: string) =>
+    [...root.querySelectorAll<HTMLLabelElement>('li label')].find(
+      (l) => l.textContent === t,
+    )!;
+  const shiftClick = (el: HTMLElement) =>
+    el.dispatchEvent(
+      new MouseEvent('click', {
+        bubbles: true,
+        cancelable: true,
+        shiftKey: true,
+      }),
+    );
+  const key = (el: HTMLElement, k: string, shiftKey = false) => {
+    const e = new KeyboardEvent('keydown', {
+      key: k,
+      shiftKey,
+      bubbles: true,
+      cancelable: true,
+    });
+    el.dispatchEvent(e);
+    return e;
+  };
+  const search = (q: string) => {
+    const i = root.querySelector<HTMLInputElement>('.notes-search-input')!;
+    i.value = q;
+    i.dispatchEvent(new Event('input'));
+    return i;
+  };
+  const focused = () => document.activeElement as HTMLElement;
+  const archivedTitles = (store: NotesStore) =>
+    store
+      .getState()
+      .notes.filter((n) => n.archivedAt !== undefined)
+      .map((n) => n.body.slice(2))
+      .sort();
+
+  it('starts off, then shows checkboxes and the bar, and stores nothing', () => {
+    const { store, storage } = seed(['One', 'Two']);
+    mountNoteList(root, store);
+    const setItem = vi.spyOn(storage, 'setItem');
+    expect(toggle().textContent).toBe('Select');
+    expect(toggle().getAttribute('aria-pressed')).toBe('false');
+    expect(boxes()).toHaveLength(0);
+    expect(bar().hidden).toBe(true);
+    toggle().click();
+    expect(toggle().getAttribute('aria-pressed')).toBe('true');
+    expect(rows()).toEqual(['One', 'Two']);
+    expect(bar().hidden).toBe(false);
+    box('One').click();
+    expect(setItem).not.toHaveBeenCalled();
+    const second = document.createElement('nav');
+    document.body.append(second);
+    mountNoteList(second, store);
+    expect(
+      second
+        .querySelector('.notes-select-toggle')
+        ?.getAttribute('aria-pressed'),
+    ).toBe('false');
+    expect(second.querySelectorAll('.notes-select')).toHaveLength(0);
+    second.remove();
+    const keys = [...Array(storage.length).keys()].map((i) => storage.key(i));
+    expect(keys.sort()).toEqual(['quill:v1', 'quill:v1:selected']);
+  });
+
+  it('disables Select only when the showing view is empty', () => {
+    const { store } = seed(['One']);
+    mountNoteList(root, store);
+    expect(toggle().disabled).toBe(false);
+    btn('Archived (0)').click();
+    expect(toggle().disabled).toBe(true);
+  });
+
+  it('labels checkboxes with the title, toggles by title and hides row buttons', () => {
+    const { store } = seed(['One', 'Two']);
+    mountNoteList(root, store);
+    const select = vi.spyOn(store, 'select');
+    toggle().click();
+    const b = box('One');
+    expect(b.type).toBe('checkbox');
+    expect(b.getAttribute('aria-label')).toBeNull();
+    expect(label('One').htmlFor).toBe(b.id);
+    for (const cls of [
+      'notes-star',
+      'notes-item',
+      'notes-archive',
+      'notes-delete',
+    ])
+      expect(root.querySelectorAll(`li .${cls}`)).toHaveLength(0);
+    label('One').click();
+    expect(box('One').checked).toBe(true);
+    expect(countText()).toBe('1 selected');
+    expect(select).not.toHaveBeenCalled();
+    cancel().click();
+    for (const cls of [
+      'notes-star',
+      'notes-item',
+      'notes-archive',
+      'notes-delete',
+    ])
+      expect(root.querySelectorAll(`li .${cls}`)).toHaveLength(2);
+    expect(boxes()).toHaveLength(0);
+  });
+
+  it('keeps aria-current on the open note row', () => {
+    const { store, ids } = seed(['One', 'Two']);
+    store.select(ids.Two!);
+    mountNoteList(root, store);
+    toggle().click();
+    const current = root.querySelector('[aria-current="true"]');
+    expect(current?.tagName).toBe('LI');
+    expect(current?.querySelector('label')?.textContent).toBe('Two');
+  });
+
+  it('shows the bar with a polite count, and Restore in Archived', () => {
+    const { store, ids } = seed(['One', 'Two', 'Three']);
+    store.setArchived(ids.Three!, true);
+    mountNoteList(root, store);
+    toggle().click();
+    const count = root.querySelector('.notes-bulk-count')!;
+    expect(count.getAttribute('aria-live')).toBe('polite');
+    expect(countText()).toBe('0 selected');
+    expect(
+      [...bar().querySelectorAll('button')].map((b) => b.textContent),
+    ).toEqual(['Select all', 'Archive', 'Cancel']);
+    expect(bulk().disabled).toBe(true);
+    box('One').click();
+    box('Two').click();
+    expect(countText()).toBe('2 selected');
+    expect(bulk().disabled).toBe(false);
+    expect(root.querySelector('.notes-bulk-count')).toBe(count);
+    box('Two').click();
+    box('One').click();
+    expect(countText()).toBe('0 selected');
+    expect(bulk().disabled).toBe(true);
+    expect(bar().hidden).toBe(false);
+    expect(boxes()).toHaveLength(2);
+    btn('Archived (1)').click();
+    expect(bulk().textContent).toBe('Restore');
+    expect(
+      [...bar().querySelectorAll('[data-focus]')].map(
+        (b) => (b as HTMLElement).dataset.focus,
+      ),
+    ).toEqual(['bulk-select-all', 'bulk-action', 'bulk-cancel']);
+  });
+
+  it('Select all takes only the visible rows of the showing view', () => {
+    const { store, ids } = seed([
+      'Apple pie',
+      'Apple tart',
+      'Bread',
+      'Cake',
+      'Old apple',
+    ]);
+    store.setArchived(ids['Old apple']!, true);
+    mountNoteList(root, store);
+    toggle().click();
+    search('apple');
+    btn('Select all').click();
+    expect(ticked()).toEqual(['Apple pie', 'Apple tart']);
+    expect(countText()).toBe('2 selected');
+    btn('Archived (1)').click();
+    btn('Select all').click();
+    expect(ticked()).toEqual(['Old apple']);
+  });
+
+  it('drops a selected row hidden by search and leaves it unticked after', () => {
+    const { store } = seed(['Apple', 'Bread']);
+    mountNoteList(root, store);
+    toggle().click();
+    box('Bread').click();
+    search('apple');
+    expect(countText()).toBe('0 selected');
+    search('');
+    expect(ticked()).toEqual([]);
+  });
+
+  it('drops a selected note archived in another tab', () => {
+    const { store, storage, ids } = seed(['One', 'Two']);
+    mountNoteList(root, store);
+    toggle().click();
+    box('One').click();
+    box('Two').click();
+    const next = store
+      .getState()
+      .notes.map((n) => (n.id === ids.One ? { ...n, archivedAt: 9 } : n));
+    storage.setItem('quill:v1', JSON.stringify(next));
+    window.dispatchEvent(new StorageEvent('storage', { key: 'quill:v1' }));
+    expect(rows()).toEqual(['Two']);
+    expect(countText()).toBe('1 selected');
+  });
+
+  it('bulk Archive makes one store call and one storage write', () => {
+    const { store, storage, ids } = seed(['One', 'Two', 'Three', 'Four']);
+    mountNoteList(root, store);
+    const many = vi.spyOn(store, 'setArchivedMany');
+    const setItem = vi.spyOn(storage, 'setItem');
+    toggle().click();
+    box('Three').click();
+    box('One').click();
+    box('Two').click();
+    bulk().click();
+    expect(many).toHaveBeenCalledTimes(1);
+    expect(many).toHaveBeenCalledWith([ids.One, ids.Two, ids.Three], true);
+    expect(setItem.mock.calls.filter(([k]) => k === 'quill:v1')).toHaveLength(
+      1,
+    );
+    expect(countText()).toBe('0 selected');
+    expect(toggle().getAttribute('aria-pressed')).toBe('true');
+    expect(rows()).toEqual(['Four']);
+    btn('Archived (3)').click();
+    expect(rows().sort()).toEqual(['One', 'Three', 'Two']);
+  });
+
+  it('bulk Restore makes one store call and returns the notes', () => {
+    const { store, ids } = seed(['One', 'Two', 'Three']);
+    store.setArchivedMany([ids.One!, ids.Two!, ids.Three!], true);
+    mountNoteList(root, store);
+    btn('Archived (3)').click();
+    const many = vi.spyOn(store, 'setArchivedMany');
+    toggle().click();
+    const [first, , third] = rows();
+    box(first!).click();
+    box(third!).click();
+    bulk().click();
+    expect(many).toHaveBeenCalledTimes(1);
+    expect(many).toHaveBeenCalledWith([ids[first!], ids[third!]], false);
+    btn('Notes').click();
+    expect(rows().sort()).toEqual([first, third].sort());
+  });
+
+  it('clears the selection on a view switch and keeps select mode', () => {
+    const { store, ids } = seed(['One', 'Two']);
+    store.setArchived(ids.Two!, true);
+    mountNoteList(root, store);
+    toggle().click();
+    box('One').click();
+    btn('Archived (1)').click();
+    expect(countText()).toBe('0 selected');
+    expect(toggle().getAttribute('aria-pressed')).toBe('true');
+    box('Two').click();
+    btn('Notes').click();
+    expect(countText()).toBe('0 selected');
+    expect(ticked()).toEqual([]);
+    expect(boxes()).toHaveLength(1);
+  });
+
+  it('exits on Cancel, the toggle and Esc, focusing Select; search Esc wins', () => {
+    const { store } = seed(['One', 'Two']);
+    mountNoteList(root, store);
+    const exits: Array<() => void> = [
+      () => cancel().click(),
+      () => toggle().click(),
+      () => {
+        box('Two').focus();
+        key(box('Two'), 'Escape');
+      },
+    ];
+    for (const exit of exits) {
+      toggle().click();
+      box('One').click();
+      exit();
+      expect(toggle().getAttribute('aria-pressed')).toBe('false');
+      expect(boxes()).toHaveLength(0);
+      expect(bar().hidden).toBe(true);
+      expect(focused().dataset.focus).toBe('select-mode');
+      toggle().click();
+      expect(ticked()).toEqual([]);
+      cancel().click();
+    }
+    toggle().click();
+    const i = search('One');
+    i.focus();
+    const e = key(i, 'Escape');
+    expect(e.defaultPrevented).toBe(true);
+    expect(i.value).toBe('');
+    expect(toggle().getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('lets the tag filter clear itself on Esc before select mode exits', () => {
+    const { store, ids } = seed(['One', 'Two']);
+    store.setTags(ids.One, ['work']);
+    mountNoteList(root, store);
+    toggle().click();
+    const tag = root.querySelector<HTMLSelectElement>('.notes-tag-select')!;
+    tag.value = 'work';
+    tag.dispatchEvent(new Event('change', { bubbles: true }));
+    expect(rows()).toEqual(['One']);
+    const e = key(
+      root.querySelector<HTMLSelectElement>('.notes-tag-select')!,
+      'Escape',
+    );
+    expect(e.defaultPrevented).toBe(true);
+    expect(rows()).toEqual(['One', 'Two']);
+    expect(toggle().getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('stops answering Esc once unmounted', () => {
+    const { store } = seed(['One']);
+    const unmount = mountNoteList(root, store);
+    toggle().click();
+    unmount();
+    key(box('One'), 'Escape');
+    expect(toggle().getAttribute('aria-pressed')).toBe('true');
+    expect(boxes()).toHaveLength(1);
+  });
+
+  it('New note exits select mode and lists the new note', () => {
+    const { store } = seed(['One']);
+    mountNoteList(root, store);
+    toggle().click();
+    box('One').click();
+    btn('New note').click();
+    expect(toggle().getAttribute('aria-pressed')).toBe('false');
+    expect(
+      [...root.querySelectorAll('li .notes-item')].map((e) => e.textContent),
+    ).toContain('Untitled');
+  });
+
+  it('focuses the first row after Archive, else Cancel', () => {
+    const { store, ids } = seed(['One', 'Two', 'Three']);
+    mountNoteList(root, store);
+    toggle().click();
+    box('One').click();
+    box('Two').click();
+    bulk().focus();
+    bulk().click();
+    expect(focused().dataset.focus).toBe(`select:${ids.Three}`);
+    btn('Select all').click();
+    bulk().click();
+    expect(focused()).toBe(cancel());
+    expect(focused()).not.toBe(document.body);
+  });
+
+  it('keeps row Archive and Restore on setArchived outside select mode', () => {
+    const { store, ids } = seed(['One']);
+    mountNoteList(root, store);
+    const one = vi.spyOn(store, 'setArchived');
+    root.querySelector<HTMLButtonElement>('.notes-archive')!.click();
+    expect(one).toHaveBeenLastCalledWith(ids.One, true);
+    btn('Archived (1)').click();
+    root.querySelector<HTMLButtonElement>('.notes-restore')!.click();
+    expect(one).toHaveBeenLastCalledWith(ids.One, false);
+  });
+
+  describe('ranges', () => {
+    it('shift-click selects down from the anchor', () => {
+      const { store } = seed(five);
+      mountNoteList(root, store);
+      toggle().click();
+      box('Two').click();
+      shiftClick(box('Four'));
+      expect(ticked()).toEqual(['Two', 'Three', 'Four']);
+      expect(countText()).toBe('3 selected');
+      expect(focused()).toBe(box('Four'));
+    });
+
+    it('shift-click on a title selects up from the anchor', () => {
+      const { store } = seed(five);
+      mountNoteList(root, store);
+      toggle().click();
+      box('Four').click();
+      const down = new MouseEvent('mousedown', {
+        bubbles: true,
+        cancelable: true,
+        shiftKey: true,
+      });
+      label('One').dispatchEvent(down);
+      expect(down.defaultPrevented).toBe(true);
+      shiftClick(label('One'));
+      expect(ticked()).toEqual(['One', 'Two', 'Three', 'Four']);
+      expect(focused()).toBe(box('One'));
+    });
+
+    it('only adds to the selection', () => {
+      const { store } = seed(five);
+      mountNoteList(root, store);
+      toggle().click();
+      box('One').click();
+      box('Five').click();
+      box('Two').click();
+      shiftClick(box('Three'));
+      expect(ticked()).toEqual(['One', 'Two', 'Three', 'Five']);
+    });
+
+    it('skips rows hidden by search', () => {
+      const { store } = seed(['Apple 1', 'Bread', 'Apple 2', 'Apple 3']);
+      mountNoteList(root, store);
+      toggle().click();
+      search('apple');
+      box('Apple 1').click();
+      shiftClick(box('Apple 3'));
+      expect(countText()).toBe('3 selected');
+      search('');
+      expect(ticked()).toEqual(['Apple 1', 'Apple 2', 'Apple 3']);
+    });
+
+    it('with no anchor toggles only that row', () => {
+      const { store } = seed(five);
+      mountNoteList(root, store);
+      toggle().click();
+      shiftClick(box('Three'));
+      expect(ticked()).toEqual(['Three']);
+      shiftClick(box('Five'));
+      expect(ticked()).toEqual(['Three', 'Four', 'Five']);
+    });
+
+    it('resets the anchor after an action, a view switch and Cancel', () => {
+      const { store } = seed(five);
+      mountNoteList(root, store);
+      toggle().click();
+      box('One').click();
+      bulk().click();
+      shiftClick(box('Four'));
+      expect(ticked()).toEqual(['Four']);
+      btn('Archived (1)').click();
+      btn('Notes').click();
+      shiftClick(box('Two'));
+      expect(ticked()).toEqual(['Two']);
+      cancel().click();
+      toggle().click();
+      shiftClick(box('Five'));
+      expect(ticked()).toEqual(['Five']);
+    });
+
+    it('Space toggles natively and sets the anchor for Shift+Space', () => {
+      const { store } = seed(five);
+      mountNoteList(root, store);
+      toggle().click();
+      box('Two').focus();
+      const space = key(box('Two'), ' ');
+      expect(space.defaultPrevented).toBe(false);
+      // The browser's own activation for an unprevented Space on a checkbox.
+      box('Two').click();
+      expect(ticked()).toEqual(['Two']);
+      box('Four').focus();
+      const range = key(box('Four'), ' ', true);
+      expect(range.defaultPrevented).toBe(true);
+      expect(ticked()).toEqual(['Two', 'Three', 'Four']);
+      expect(focused()).toBe(box('Four'));
+    });
+
+    it('Shift+Space takes the range from an anchor above, keeping the focused row', () => {
+      const { store } = seed(five);
+      mountNoteList(root, store);
+      toggle().click();
+      box('One').click();
+      box('Three').focus();
+      const e = key(box('Three'), ' ', true);
+      expect(e.defaultPrevented).toBe(true);
+      expect(ticked()).toEqual(['One', 'Two', 'Three']);
+      expect(box('Three').checked).toBe(true);
+      expect(focused()).toBe(box('Three'));
+      expect(focused()).not.toBe(document.body);
+    });
+  });
+
+  describe('toast and undo', () => {
+    it('is a hidden, empty, non-live container on mount', () => {
+      const { store } = seed(['One']);
+      mountNoteList(root, store);
+      const t = toast();
+      expect(t.hidden).toBe(true);
+      expect(t.childNodes).toHaveLength(0);
+      expect(t.getAttribute('role')).toBeNull();
+      expect(t.getAttribute('aria-live')).toBeNull();
+      expect(t.previousElementSibling).toBe(bar());
+    });
+
+    it('reads the changed count with an Undo button', () => {
+      const { store } = seed(['One', 'Two', 'Three']);
+      mountNoteList(root, store);
+      toggle().click();
+      btn('Select all').click();
+      bulk().click();
+      expect(toast().hidden).toBe(false);
+      expect(toast().textContent).toBe('3 notes archivedUndo');
+      expect(undo().textContent).toBe('Undo');
+      btn('Archived (3)').click();
+      box('Two').click();
+      bulk().click();
+      expect(toast().textContent).toBe('1 note restoredUndo');
+    });
+
+    it('hides at 5000 ms, paused while Undo has focus', () => {
+      vi.useFakeTimers();
+      const { store } = seed(['One', 'Two']);
+      mountNoteList(root, store);
+      toggle().click();
+      box('One').click();
+      bulk().click();
+      vi.advanceTimersByTime(4999);
+      expect(toast().hidden).toBe(false);
+      vi.advanceTimersByTime(1);
+      expect(toast().hidden).toBe(true);
+      box('Two').click();
+      bulk().click();
+      undo().focus();
+      vi.advanceTimersByTime(8000);
+      expect(toast().hidden).toBe(false);
+      toggle().focus();
+      vi.advanceTimersByTime(4999);
+      expect(toast().hidden).toBe(false);
+      vi.advanceTimersByTime(1);
+      expect(toast().hidden).toBe(true);
+    });
+
+    it('clears the toast timer on unmount', () => {
+      vi.useFakeTimers();
+      const { store } = seed(['One']);
+      const unmount = mountNoteList(root, store);
+      toggle().click();
+      box('One').click();
+      bulk().click();
+      expect(vi.getTimerCount()).toBe(1);
+      unmount();
+      expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it('gives a second batch its own full 5000 ms', () => {
+      vi.useFakeTimers();
+      const { store } = seed(['One', 'Two']);
+      mountNoteList(root, store);
+      toggle().click();
+      box('One').click();
+      bulk().click();
+      vi.advanceTimersByTime(3000);
+      box('Two').click();
+      bulk().click();
+      vi.advanceTimersByTime(4999);
+      expect(toast().hidden).toBe(false);
+      vi.advanceTimersByTime(1);
+      expect(toast().hidden).toBe(true);
+    });
+
+    it('Undo inverts an archive batch in one call and focuses the view toggle', () => {
+      const { store, ids } = seed(['One', 'Two', 'Three', 'Four']);
+      mountNoteList(root, store);
+      toggle().click();
+      box('One').click();
+      box('Two').click();
+      box('Three').click();
+      bulk().click();
+      const many = vi.spyOn(store, 'setArchivedMany');
+      undo().focus();
+      undo().click();
+      expect(many).toHaveBeenCalledTimes(1);
+      expect(many).toHaveBeenCalledWith([ids.One, ids.Two, ids.Three], false);
+      expect(rows()).toEqual(['One', 'Two', 'Three', 'Four']);
+      expect(toast().hidden).toBe(true);
+      expect(focused().dataset.focus).toBe('view:notes');
+      expect(
+        focused().closest('[role="group"]')?.getAttribute('aria-label'),
+      ).toBe('Note views');
+    });
+
+    it('Undo re-archives a restore batch', () => {
+      const { store, ids } = seed(['One', 'Two', 'Three']);
+      store.setArchivedMany([ids.One!, ids.Two!, ids.Three!], true);
+      mountNoteList(root, store);
+      btn('Archived (3)').click();
+      toggle().click();
+      box('One').click();
+      box('Two').click();
+      bulk().click();
+      const many = vi.spyOn(store, 'setArchivedMany');
+      const batch = many.mock.calls.length;
+      undo().click();
+      expect(many.mock.calls.slice(batch)).toHaveLength(1);
+      expect(many.mock.calls[batch]![1]).toBe(true);
+      expect([...many.mock.calls[batch]![0]].sort()).toEqual(
+        [ids.One, ids.Two].sort(),
+      );
+      expect(archivedTitles(store)).toEqual(['One', 'Three', 'Two']);
+      expect(focused().dataset.focus).toBe('view:archived');
+    });
+
+    it('a second batch replaces the toast and Undo inverts only it', () => {
+      const { store, ids } = seed(['One', 'Two', 'Three', 'Four']);
+      mountNoteList(root, store);
+      toggle().click();
+      box('One').click();
+      bulk().click();
+      box('Two').click();
+      box('Three').click();
+      bulk().click();
+      expect(toast().textContent).toBe('2 notes archivedUndo');
+      const many = vi.spyOn(store, 'setArchivedMany');
+      undo().click();
+      expect(many).toHaveBeenCalledWith([ids.Two, ids.Three], false);
+      expect(archivedTitles(store)).toEqual(['One']);
+    });
+
+    it('row Archive neither shows nor hides the toast', () => {
+      const { store } = seed(['One', 'Two', 'Three']);
+      mountNoteList(root, store);
+      root.querySelector<HTMLButtonElement>('.notes-archive')!.click();
+      expect(toast().hidden).toBe(true);
+      toggle().click();
+      box('Two').click();
+      bulk().click();
+      cancel().click();
+      root.querySelector<HTMLButtonElement>('.notes-archive')!.click();
+      expect(toast().hidden).toBe(false);
+      expect(toast().textContent).toBe('1 note archivedUndo');
+    });
+
+    it('survives a view switch and Cancel, and Undo still works', () => {
+      const { store } = seed(['One', 'Two']);
+      mountNoteList(root, store);
+      toggle().click();
+      btn('Select all').click();
+      bulk().click();
+      btn('Archived (2)').click();
+      cancel().click();
+      expect(toast().hidden).toBe(false);
+      undo().click();
+      expect(archivedTitles(store)).toEqual([]);
+      expect(focused().dataset.focus).toBe('view:archived');
+    });
+
+    it('puts Undo next in tab order after the bar', () => {
+      const { store } = seed(['One', 'Two']);
+      mountNoteList(root, store);
+      toggle().click();
+      box('One').click();
+      bulk().click();
+      const tabbable = [
+        ...root.querySelectorAll<HTMLElement>('button, input, select'),
+      ].filter(
+        (el) =>
+          !(el as HTMLButtonElement).disabled &&
+          !el.closest('[hidden]') &&
+          !(el as HTMLInputElement).hidden,
+      );
+      const at = tabbable.indexOf(cancel());
+      expect(at).toBeGreaterThan(-1);
+      expect(tabbable[at + 1]).toBe(undo());
+    });
+  });
+
+  describe('announcements', () => {
+    /** Records every non-empty write to the node's text. */
+    function recordWrites(node: Node): string[] {
+      const writes: string[] = [];
+      let proto: object | null = node;
+      let desc: PropertyDescriptor | undefined;
+      while (proto && !desc) {
+        desc = Object.getOwnPropertyDescriptor(proto, 'textContent');
+        proto = Object.getPrototypeOf(proto) as object | null;
+      }
+      const { get, set } = desc!;
+      Object.defineProperty(node, 'textContent', {
+        configurable: true,
+        get() {
+          return get!.call(node) as string;
+        },
+        set(v: string) {
+          if (v) writes.push(v);
+          set!.call(node, v);
+        },
+      });
+      return writes;
+    }
+
+    it('bulk Archive writes once into the same live node as row Archive', () => {
+      const { store } = seed(['One', 'Two', 'Three', 'Four', 'Five']);
+      mountNoteList(root, store);
+      root.querySelector<HTMLButtonElement>('.notes-archive')!.click();
+      const node = live();
+      expect(node.textContent).toMatch(/^Archived "One"\. Archived \(1\)\.$/);
+      const writes = recordWrites(node);
+      toggle().click();
+      btn('Select all').click();
+      box('Five').click();
+      bulk().click();
+      expect(live()).toBe(node);
+      expect(writes).toEqual(['Archived 3 notes. Archived (4).']);
+      const polite = [...root.querySelectorAll('[aria-live="polite"]')];
+      expect(polite).toEqual([node, root.querySelector('.notes-bulk-count')]);
+      expect(root.querySelectorAll('[role="status"]')).toHaveLength(2);
+    });
+
+    it('announces Restore and both Undos once each', () => {
+      const { store, ids } = seed(['One', 'Two', 'Three', 'Four']);
+      store.setArchived(ids.Four!, true);
+      mountNoteList(root, store);
+      const writes = recordWrites(live());
+      btn('Archived (1)').click();
+      toggle().click();
+      box('Four').click();
+      bulk().click();
+      expect(writes).toEqual(['Restored 1 note. Archived (0).']);
+      btn('Notes').click();
+      btn('Select all').click();
+      box('Four').click();
+      bulk().click();
+      undo().click();
+      expect(writes.slice(1)).toEqual([
+        'Archived 3 notes. Archived (3).',
+        'Undid archive of 3 notes. Archived (0).',
+      ]);
+      box('One').click();
+      box('Two').click();
+      bulk().click();
+      btn('Archived (2)').click();
+      btn('Select all').click();
+      bulk().click();
+      undo().click();
+      expect(writes.slice(3)).toEqual([
+        'Archived 2 notes. Archived (2).',
+        'Restored 2 notes. Archived (0).',
+        'Undid restore of 2 notes. Archived (2).',
+      ]);
+    });
+
+    it('a batch that changes nothing announces nothing and leaves focus alone', () => {
+      const { store, ids } = seed(['One', 'Two']);
+      // Hold back notifications so the list can't re-render between the
+      // other tab's change and the press.
+      let paused = false;
+      let listener:
+        ((s: NotesState, src: 'local' | 'external') => void) | undefined;
+      store.subscribe((s, src) => {
+        if (!paused) listener?.(s, src);
+      });
+      const gated: NotesStore = {
+        ...store,
+        subscribe: (l) => {
+          listener = l;
+          return () => {
+            listener = undefined;
+          };
+        },
+      };
+      mountNoteList(root, gated);
+      const many = vi.spyOn(gated, 'setArchivedMany');
+      toggle().click();
+      box('One').click();
+      paused = true;
+      store.setArchived(ids.One!, true);
+      const writes = recordWrites(live());
+      bulk().focus();
+      bulk().click();
+      expect(many).toHaveBeenCalledTimes(1);
+      expect(many).toHaveBeenCalledWith([ids.One], true);
+      expect(writes).toEqual([]);
+      expect(toast().hidden).toBe(true);
+      expect(countText()).toBe('0 selected');
+      expect(focused()).not.toBe(document.body);
+      const searchBox = root.querySelector<HTMLInputElement>(
+        '.notes-search-input',
+      )!;
+      searchBox.focus();
+      paused = false;
+      store.update(ids.Two!, '# Two again');
+      expect(document.activeElement).toBe(searchBox);
+    });
+
+    it('an Undo that changes nothing announces nothing and keeps focus off body', () => {
+      const { store, ids } = seed(['One', 'Two']);
+      mountNoteList(root, store);
+      toggle().click();
+      box('One').click();
+      bulk().click();
+      const writes = recordWrites(live());
+      store.setArchived(ids.One!, false);
+      undo().focus();
+      undo().click();
+      expect(writes).toEqual([]);
+      expect(toast().hidden).toBe(true);
+      expect(focused().dataset.focus).toBe('view:notes');
+      const searchBox = root.querySelector<HTMLInputElement>(
+        '.notes-search-input',
+      )!;
+      searchBox.focus();
+      store.update(ids.Two!, '# Two again');
+      expect(document.activeElement).toBe(searchBox);
+    });
+  });
+
+  it('journey: select a range, archive it and undo', () => {
+    const { store } = seed(five);
+    mountNoteList(root, store);
+    toggle().click();
+    box('Two').click();
+    shiftClick(box('Four'));
+    bulk().click();
+    expect(rows()).toEqual(['One', 'Five']);
+    expect(toast().textContent).toBe('3 notes archivedUndo');
+    expect(live().textContent).toBe('Archived 3 notes. Archived (3).');
+    undo().click();
+    expect(rows()).toEqual(five);
+    expect(live().textContent).toBe('Undid archive of 3 notes. Archived (0).');
+  });
+
+  it('styles every new control with theme tokens and a focus ring', () => {
+    const css = readFileSync('src/notes/list.css', 'utf8');
+    const rules =
+      css.match(/\.notes-(select|bulk|toast|view-row)[^{]*\{[^}]*\}/g) ?? [];
+    const joined = rules.join('\n');
+    expect(rules.length).toBeGreaterThan(5);
+    expect(joined).not.toMatch(/#[0-9a-f]{3,8}\b|rgb\(|hsl\(|oklch\(/i);
+    for (const sel of [
+      '.notes-select-toggle:focus-visible',
+      '.notes-select:focus-visible',
+      '.notes-bulk-button:focus-visible',
+      '.notes-toast-undo:focus-visible',
+    ])
+      expect(css).toContain(sel);
   });
 });
