@@ -127,12 +127,14 @@ export function mountNoteList(
       options?.beforeExport?.();
       exportAllNotes(store.getState().notes);
     });
-    exportAll.setAttribute('aria-label', 'Export all notes as .zip');
+    exportAll.setAttribute('aria-label', 'Export all notes as a zip');
     exportAll.disabled = notes.length === 0;
+    const backupBtn = action('backup', 'Back up', 'notes-secondary', backup);
+    backupBtn.setAttribute('aria-label', 'Back up all notes as a JSON file');
     actions.append(
       action('new', 'New note', 'notes-new', () => store.create()),
       exportAll,
-      action('backup', 'Backup', 'notes-secondary', backup),
+      backupBtn,
       action('restore', 'Restore', 'notes-secondary', () => input.click()),
     );
     frag.append(actions);

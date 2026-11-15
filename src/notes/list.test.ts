@@ -74,6 +74,19 @@ describe('note list', () => {
     expect(createNotesStore(storage).getState().notes).toEqual([]);
   });
 
+  it('disables Export all after the last note is deleted', () => {
+    const store = createNotesStore(mem());
+    store.create();
+    mountNoteList(root, store);
+    const confirm = vi.fn(() => true);
+    vi.stubGlobal('confirm', confirm);
+    window.confirm = confirm;
+    root.querySelector<HTMLButtonElement>('.notes-delete')?.click();
+    expect(
+      root.querySelector<HTMLButtonElement>('.notes-export')?.disabled,
+    ).toBe(true);
+  });
+
   it('shows an alert only while a write error is set', () => {
     const storage = mem();
     const store = createNotesStore(storage);
@@ -140,7 +153,7 @@ describe('note list', () => {
     const btn = (): HTMLButtonElement =>
       root.querySelector('.notes-export') as HTMLButtonElement;
     expect(btn().disabled).toBe(true);
-    expect(btn().getAttribute('aria-label')).toBe('Export all notes as .zip');
+    expect(btn().getAttribute('aria-label')).toBe('Export all notes as a zip');
     store.create();
     expect(btn().disabled).toBe(false);
     btn().focus();
@@ -180,9 +193,12 @@ describe('note list', () => {
       expect(labels).toEqual([
         ['BUTTON', 'button', 'New note'],
         ['BUTTON', 'button', 'Export all'],
-        ['BUTTON', 'button', 'Backup'],
+        ['BUTTON', 'button', 'Back up'],
         ['BUTTON', 'button', 'Restore'],
       ]);
+      expect(
+        root.querySelector('[data-focus="backup"]')?.getAttribute('aria-label'),
+      ).toBe('Back up all notes as a JSON file');
       root.querySelector<HTMLElement>('[data-focus="backup"]')?.focus();
       store.create();
       expect((document.activeElement as HTMLElement).dataset.focus).toBe(
