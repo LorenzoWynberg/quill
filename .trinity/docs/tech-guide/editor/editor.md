@@ -17,6 +17,10 @@ The skip link (`a.skip-link`) calls `showEditPane()` before focusing, so focus n
 
 The document and window listeners are never removed; there is no dispose function.
 
+## Archived notice
+
+The editor header holds an `editor-archived` notice (`role="status"`) reading "This note is archived." with a `Restore` button (`aria-label` `Restore note from archive`). It is hidden unless the open note has `archivedAt` set; `renderArchived()` runs on `show()` and on every store update, so an external archive or restore updates it. Restore calls `store.setArchived(id, false)` and moves focus to the textarea. See [Archived notes](../notes/archive.md).
+
 ## Tag field
 
 Below the textarea, a `tag-field` group (labelled "Tags") shows one chip per tag of the open note and an `Add tag` input. It is hidden while no note is selected. Validation lives in the notes domain (`normaliseTag`, `normaliseTags`; see [Note tags](../notes/tags.md)); the editor only collects input.

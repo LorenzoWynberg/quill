@@ -581,4 +581,312 @@ describe('notes store', () => {
       );
     });
   });
+
+  describe('archive', () => {
+    const writes = (spy: { mock: { calls: unknown[][] } }) =>
+      spy.mock.calls.filter((c) => c[0] === 'quill:v1').length;
+
+    it('archives and unarchives without touching updatedAt, and persists', () => {
+      const s = new MemStorage();
+      seed(s, [{ ...n('a', 'A', 5), starred: true, tags: ['t'] }]);
+      const store = createNotesStore(s);
+      store.setArchived('a', true);
+      const got = store.getState().notes[0];
+      expect(got?.archivedAt).toBeGreaterThan(0);
+      expect(got).toMatchObject({ updatedAt: 5, body: 'A', starred: true });
+      expect(JSON.parse(s.data.get('quill:v1') ?? '[]')[0].archivedAt).toBe(
+        got?.archivedAt,
+      );
+      expect(createNotesStore(s).getState().notes[0]?.archivedAt).toBe(
+        got?.archivedAt,
+      );
+      store.setArchived('a', false);
+      expect(store.getState().notes[0]).not.toHaveProperty('archivedAt');
+    });
+
+    it('drops an invalid archivedAt without a backup copy', () => {
+      const s = new MemStorage();
+      seed(s, [
+        { ...n('a', 'A', 1), archivedAt: 'x' },
+        { ...n('b', 'B', 2), archivedAt: -3 },
+      ]);
+      const store = createNotesStore(s);
+      expect(store.getState().notes.some((x) => 'archivedAt' in x)).toBe(false);
+      expect([...s.data.keys()].some((k) => k.includes('backup'))).toBe(false);
+    });
+
+    it('writes and emits once per batch, and not at all for a no-op', () => {
+      const s = new MemStorage();
+      seed(s, [n('a', 'A', 1), n('b', 'B', 2), n('c', 'C', 3)]);
+      const store = createNotesStore(s);
+      const spy = vi.spyOn(s, 'setItem');
+      const listener = vi.fn();
+      store.subscribe(listener);
+      store.setArchivedMany(['a', 'b', 'zzz'], true);
+      expect(writes(spy)).toBe(1);
+      expect(listener).toHaveBeenCalledTimes(1);
+      store.setArchivedMany(['a', 'b'], true);
+      store.setArchivedMany(['c'], false);
+      expect(writes(spy)).toBe(1);
+      expect(listener).toHaveBeenCalledTimes(1);
+    });
+
+    it('archives three notes with one shared timestamp, one write, one local emit', () => {
+      const s = new MemStorage();
+      seed(s, [n('a', 'A', 1), n('b', 'B', 2), n('c', 'C', 3)]);
+      const store = createNotesStore(s);
+      const spy = vi.spyOn(s, 'setItem');
+      const listener = vi.fn();
+      store.subscribe(listener);
+      store.setArchivedMany(['a', 'b', 'c'], true);
+      const at = store.getState().notes.map((x) => x.archivedAt);
+      expect(typeof at[0]).toBe('number');
+      expect(new Set(at).size).toBe(1);
+      expect(writes(spy)).toBe(1);
+      expect(listener).toHaveBeenCalledTimes(1);
+      expect(listener.mock.calls[0]?.[1]).toBe('local');
+    });
+
+    it('unarchives three notes in one write without touching updatedAt', () => {
+      const s = new MemStorage();
+      seed(s, [
+        { ...n('a', 'A', 1), archivedAt: 5 },
+        { ...n('b', 'B', 2), archivedAt: 5 },
+        { ...n('c', 'C', 3), archivedAt: 5 },
+      ]);
+      const store = createNotesStore(s);
+      const spy = vi.spyOn(s, 'setItem');
+      const listener = vi.fn();
+      store.subscribe(listener);
+      store.setArchivedMany(['a', 'b', 'c'], false);
+      const got = store.getState().notes;
+      expect(got.some((x) => 'archivedAt' in x)).toBe(false);
+      expect(got.map((x) => x.updatedAt).sort()).toEqual([1, 2, 3]);
+      expect(writes(spy)).toBe(1);
+      expect(listener).toHaveBeenCalledTimes(1);
+    });
+
+    it('ignores unknown and duplicate ids, and no-op calls do nothing', () => {
+      const s = new MemStorage();
+      seed(s, [n('a', 'A', 1), { ...n('b', 'B', 2), archivedAt: 5 }]);
+      const store = createNotesStore(s);
+      const spy = vi.spyOn(s, 'setItem');
+      const listener = vi.fn();
+      store.subscribe(listener);
+      store.setArchivedMany([], true);
+      store.setArchivedMany(['zzz'], true);
+      store.setArchivedMany(['b'], true);
+      expect(writes(spy)).toBe(0);
+      expect(listener).not.toHaveBeenCalled();
+      store.setArchivedMany(['a', 'a', 'b', 'zzz'], true);
+      expect(writes(spy)).toBe(1);
+      expect(listener).toHaveBeenCalledTimes(1);
+      const byId = new Map(store.getState().notes.map((x) => [x.id, x]));
+      expect(byId.get('a')?.archivedAt).toBeGreaterThan(0);
+      expect(byId.get('b')?.archivedAt).toBe(5);
+    });
+
+    it('keeps archived notes in the starred-first, newest-first order', () => {
+      const s = new MemStorage();
+      seed(s, [
+        { ...n('a', 'A', 1), archivedAt: 5 },
+        n('b', 'B', 3),
+        { ...n('c', 'C', 2), starred: true, archivedAt: 5 },
+      ]);
+      const store = createNotesStore(s);
+      expect(store.getState().notes.map((x) => x.id)).toEqual(['c', 'b', 'a']);
+    });
+
+    it('uses only the existing storage keys', () => {
+      const s = new MemStorage();
+      seed(s, [{ ...n('a', 'A', 1), archivedAt: 5 }]);
+      const store = createNotesStore(s);
+      store.select('a');
+      store.setArchived('a', false);
+      store.setArchived('a', true);
+      const again = createNotesStore(s);
+      expect(again.getState().notes[0]?.archivedAt).toBeGreaterThan(0);
+      const allowed = new Set(['quill:v1', 'quill:v1:selected']);
+      expect([...s.data.keys()].every((k) => allowed.has(k))).toBe(true);
+      expect(s.data.has('quill:v1')).toBe(true);
+    });
+
+    it('keeps a valid archivedAt and drops invalid ones, keeping all notes', () => {
+      const s = new MemStorage();
+      seed(s, [
+        n('a', 'A', 1),
+        { ...n('b', 'B', 2), archivedAt: 9 },
+        { ...n('c', 'C', 3), archivedAt: 'yes' },
+        { ...n('d', 'D', 4), archivedAt: -1 },
+        { ...n('e', 'E', 5), archivedAt: null },
+      ]);
+      const got = createNotesStore(s).getState().notes;
+      expect(got).toHaveLength(5);
+      const byId = new Map(got.map((x) => [x.id, x]));
+      expect(byId.get('b')?.archivedAt).toBe(9);
+      for (const id of ['a', 'c', 'd', 'e'])
+        expect(byId.get(id)).not.toHaveProperty('archivedAt');
+      expect([...s.data.keys()].some((k) => k.includes('backup'))).toBe(false);
+    });
+
+    it('notifies once when archiving the selected note with its neighbour', () => {
+      const s = new MemStorage();
+      seed(s, [
+        n('a', 'A', 4),
+        n('b', 'B', 3),
+        { ...n('c', 'C', 2), archivedAt: 5 },
+        n('d', 'D', 1),
+      ]);
+      const store = createNotesStore(s);
+      store.select('a');
+      const listener = vi.fn();
+      store.subscribe(listener);
+      store.setArchivedMany(['a', 'b'], true);
+      expect(store.getState().selectedId).toBe('d');
+      expect(listener).toHaveBeenCalledTimes(1);
+    });
+
+    it('remove and load pick an unarchived note, or null when none remain', () => {
+      const s = new MemStorage();
+      seed(s, [
+        n('a', 'A', 5),
+        { ...n('b', 'B', 4), archivedAt: 5 },
+        n('c', 'C', 3),
+      ]);
+      const store = createNotesStore(s);
+      store.select('a');
+      store.remove('a');
+      expect(store.getState().selectedId).toBe('c');
+      store.remove('c');
+      expect(store.getState().selectedId).toBeNull();
+      const t = new MemStorage();
+      seed(t, [
+        { ...n('a', 'A', 5), archivedAt: 5 },
+        { ...n('b', 'B', 4), archivedAt: 5 },
+      ]);
+      expect(createNotesStore(t).getState().selectedId).toBeNull();
+    });
+
+    it('resolves a saved selection that names an archived note', () => {
+      const s = new MemStorage();
+      seed(s, [{ ...n('a', 'A', 5), archivedAt: 5 }, n('b', 'B', 4)]);
+      s.data.set('quill:v1:selected', 'a');
+      expect(createNotesStore(s).getState().selectedId).toBe('a');
+    });
+
+    it('exports archivedAt only on archived notes', () => {
+      const s = new MemStorage();
+      seed(s, [
+        { ...n('a', 'A', 1), starred: true },
+        { ...n('b', 'B', 2), archivedAt: 8 },
+      ]);
+      const out = JSON.parse(createNotesStore(s).exportBackup());
+      expect(out.app).toBe('quill');
+      expect(out.format).toBe(1);
+      const keys = (id: string) =>
+        Object.keys(out.notes.find((x: { id: string }) => x.id === id)).sort();
+      expect(keys('a')).toEqual(
+        ['body', 'createdAt', 'id', 'starred', 'tags', 'updatedAt'].sort(),
+      );
+      expect(keys('b')).toEqual(
+        ['archivedAt', 'body', 'createdAt', 'id', 'tags', 'updatedAt'].sort(),
+      );
+    });
+
+    it('imports archivedAt from the newer copy only', () => {
+      const env = (notes: unknown[]) =>
+        JSON.stringify({ app: 'quill', format: 1, notes });
+      const s = new MemStorage();
+      seed(s, [
+        { ...n('a', 'A', 1), archivedAt: 5 },
+        n('b', 'B', 1),
+        { ...n('c', 'C', 1), archivedAt: 5 },
+      ]);
+      const store = createNotesStore(s);
+      const res = store.importBackup(
+        env([
+          n('a', 'A', 2), // newer, no archivedAt -> unarchived
+          { ...n('b', 'B', 2), archivedAt: 7 }, // newer, archived
+          { ...n('c', 'C', 1), archivedAt: 99 }, // equal -> unchanged
+          { ...n('d', 'D', 1), archivedAt: 'bad' }, // added, invalid dropped
+          n('e', 'E', 1), // added unarchived
+        ]),
+      );
+      expect(res).toEqual({ ok: true, added: 2, updated: 2, unchanged: 1 });
+      const byId = new Map(store.getState().notes.map((x) => [x.id, x]));
+      expect(byId.get('a')).not.toHaveProperty('archivedAt');
+      expect(byId.get('b')?.archivedAt).toBe(7);
+      expect(byId.get('c')?.archivedAt).toBe(5);
+      expect(byId.get('d')).not.toHaveProperty('archivedAt');
+      expect(byId.get('e')).not.toHaveProperty('archivedAt');
+    });
+
+    it('receives a note archived in another tab', () => {
+      const s = new MemStorage();
+      seed(s, [n('a', 'A', 1)]);
+      const store = createNotesStore(s);
+      seed(s, [{ ...n('a', 'A', 1), archivedAt: 7 }]);
+      window.dispatchEvent(new StorageEvent('storage', { key: 'quill:v1' }));
+      expect(store.getState().notes[0]?.archivedAt).toBe(7);
+    });
+
+    it('moves selection to the next unarchived note, else previous, else null', () => {
+      const s = new MemStorage();
+      seed(s, [n('a', 'A', 3), n('b', 'B', 2), n('c', 'C', 1)]);
+      const store = createNotesStore(s);
+      store.select('a');
+      store.setArchivedMany(['a', 'b'], true);
+      expect(store.getState().selectedId).toBe('c');
+      store.setArchived('c', true);
+      expect(store.getState().selectedId).toBeNull();
+      const t = new MemStorage();
+      seed(t, [n('a', 'A', 3), n('b', 'B', 2), n('c', 'C', 1)]);
+      const two = createNotesStore(t);
+      two.select('c');
+      two.setArchived('c', true);
+      expect(two.getState().selectedId).toBe('b');
+    });
+
+    it('does not pick an archived note as the most recent on load', () => {
+      const s = new MemStorage();
+      seed(s, [{ ...n('a', 'A', 9), archivedAt: 5 }, n('b', 'B', 1)]);
+      expect(createNotesStore(s).getState().selectedId).toBe('b');
+    });
+
+    it('round-trips through backup, with the newer copy winning', () => {
+      const s = new MemStorage();
+      seed(s, [n('a', 'A', 1)]);
+      const store = createNotesStore(s);
+      store.setArchived('a', true);
+      const text = store.exportBackup();
+      expect(JSON.parse(text).notes[0]).toHaveProperty('archivedAt');
+      const other = createNotesStore(new MemStorage());
+      other.importBackup(text);
+      expect(other.getState().notes[0]?.archivedAt).toBe(
+        store.getState().notes[0]?.archivedAt,
+      );
+      const stale = JSON.stringify({
+        app: 'quill',
+        format: 1,
+        notes: [{ ...n('a', 'A', 1), archivedAt: 99 }],
+      });
+      expect(other.importBackup(stale)).toMatchObject({ unchanged: 1 });
+    });
+
+    it('carries archivedAt through a cross-tab merge of pending edits', () => {
+      const s = new MemStorage();
+      seed(s, [n('a', 'A', 1)]);
+      const store = createNotesStore(s);
+      store.setPendingLocalEdits(true);
+      seed(s, [
+        { ...n('a', 'A', 2), archivedAt: 7, starred: true, tags: ['t'] },
+      ]);
+      window.dispatchEvent(new StorageEvent('storage', { key: 'quill:v1' }));
+      expect(store.getState().notes[0]).toMatchObject({
+        archivedAt: 7,
+        starred: true,
+        tags: ['t'],
+      });
+    });
+  });
 });

@@ -44,6 +44,9 @@ export function mountNoteList(
   const notice = document.createElement('div');
   notice.setAttribute('role', 'status');
   notice.className = 'notes-notice';
+  const live = document.createElement('div');
+  live.className = 'notes-live sr-only';
+  live.setAttribute('aria-live', 'polite');
   const input = document.createElement('input');
   input.type = 'file';
   input.accept = 'application/json,.json';
@@ -89,6 +92,9 @@ export function mountNoteList(
   statusHost.className = 'notes-search-status';
   let query = '';
   let activeTag = '';
+  let view: 'notes' | 'archived' = 'notes';
+  let pendingFocus: string | undefined;
+  const viewHost = document.createElement('div');
 
   const searchRegion = document.createElement('div');
   searchRegion.className = 'notes-search';
@@ -161,8 +167,10 @@ export function mountNoteList(
   root.replaceChildren(
     alert,
     notice,
+    live,
     input,
     actionsHost,
+    viewHost,
     searchRegion,
     statusHost,
     listHost,
@@ -184,10 +192,12 @@ export function mountNoteList(
 
   function render(): void {
     const active = document.activeElement;
-    const focusKey =
+    const activeKey =
       active instanceof HTMLElement && root.contains(active)
         ? active.dataset.focus
         : undefined;
+    const focusKey = pendingFocus ?? activeKey;
+    pendingFocus = undefined;
     const { notes, selectedId, writeError } = store.getState();
 
     const actions = document.createElement('div');
@@ -216,6 +226,7 @@ export function mountNoteList(
       action('new', 'New note', 'notes-new', () => {
         clearQuery();
         clearTag();
+        view = 'notes';
         store.create();
       }),
       exportAll,
@@ -228,11 +239,47 @@ export function mountNoteList(
     if (alert.textContent !== message) alert.textContent = message;
     alert.hidden = message === '';
 
+    const archivedCount = notes.filter(
+      (n) => n.archivedAt !== undefined,
+    ).length;
+    const viewNotes =
+      view === 'notes'
+        ? notes.filter((n) => n.archivedAt === undefined)
+        : notes
+            .filter((n) => n.archivedAt !== undefined)
+            .sort(
+              (a, b) =>
+                (b.archivedAt ?? 0) - (a.archivedAt ?? 0) ||
+                b.updatedAt - a.updatedAt,
+            );
+    const group = document.createElement('div');
+    group.className = 'notes-views';
+    group.setAttribute('role', 'group');
+    group.setAttribute('aria-label', 'Note views');
+    const toggle = (key: 'notes' | 'archived', label: string) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'notes-view';
+      b.dataset.focus = `view:${key}`;
+      b.textContent = label;
+      b.setAttribute('aria-pressed', String(view === key));
+      b.addEventListener('click', () => {
+        view = key;
+        render();
+      });
+      return b;
+    };
+    group.append(
+      toggle('notes', 'Notes'),
+      toggle('archived', `Archived (${archivedCount})`),
+    );
+    viewHost.replaceChildren(group);
+
     if (notes.length === 0 && query !== '') clearQuery();
-    searchRegion.hidden = notes.length === 0;
+    searchRegion.hidden = viewNotes.length === 0;
     clearBtn.hidden = query === '';
     const tags: string[] = [];
-    for (const n of notes)
+    for (const n of viewNotes)
       for (const t of n.tags)
         if (!tags.some((x) => sameTag(x, t))) tags.push(t);
     tags.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
@@ -253,17 +300,20 @@ export function mountNoteList(
     tagSelect.value = activeTag;
     filterRow.hidden = tags.length === 0;
     tagClear.hidden = activeTag === '';
-    const visible = notes.filter(
+    const visible = viewNotes.filter(
       (n) =>
         matchesQuery(n.body, query) &&
         (activeTag === '' || n.tags.some((t) => sameTag(t, activeTag))),
     );
     const frag = document.createDocumentFragment();
 
-    if (notes.length === 0) {
+    if (viewNotes.length === 0) {
       const empty = document.createElement('p');
       empty.className = 'notes-empty';
-      empty.textContent = 'No notes yet. Create one to get started.';
+      empty.textContent =
+        view === 'archived'
+          ? 'No archived notes.'
+          : 'No notes yet. Create one to get started.';
       frag.append(empty);
     } else if (visible.length === 0) {
       const none = document.createElement('p');
@@ -289,6 +339,39 @@ export function mountNoteList(
         open.textContent = title;
         if (note.id === selectedId) open.setAttribute('aria-current', 'true');
         open.addEventListener('click', () => store.select(note.id));
+        const kind = view === 'notes' ? 'archive' : 'restore';
+        const move = document.createElement('button');
+        move.type = 'button';
+        move.className = view === 'notes' ? 'notes-archive' : 'notes-restore';
+        move.dataset.focus = `${kind}:${note.id}`;
+        move.textContent = view === 'notes' ? 'Archive' : 'Restore';
+        move.setAttribute(
+          'aria-label',
+          `${view === 'notes' ? 'Archive' : 'Restore'} "${title}"`,
+        );
+        move.addEventListener('click', () => {
+          const i = visible.findIndex((v) => v.id === note.id);
+          const neighbour = visible[i + 1] ?? visible[i - 1];
+          pendingFocus = neighbour ? `${kind}:${neighbour.id}` : `view:${view}`;
+          const archiving = view === 'notes';
+          const before = store
+            .getState()
+            .notes.find((n) => n.id === note.id)?.archivedAt;
+          store.setArchived(note.id, archiving);
+          // A no-op change notifies nobody; drop focus intent so it can't leak.
+          pendingFocus = undefined;
+          const changed = store.getState().notes.find((n) => n.id === note.id);
+          if (
+            changed &&
+            (before !== undefined) !== (changed.archivedAt !== undefined)
+          ) {
+            const count = store
+              .getState()
+              .notes.filter((n) => n.archivedAt !== undefined).length;
+            live.textContent = '';
+            live.textContent = `${archiving ? 'Archived' : 'Restored'} "${title}". Archived (${count}).`;
+          }
+        });
         const del = document.createElement('button');
         del.type = 'button';
         del.className = 'notes-delete';
@@ -313,7 +396,7 @@ export function mountNoteList(
         star.addEventListener('click', () =>
           store.setStarred(note.id, !starred),
         );
-        li.append(star, open, del);
+        li.append(star, open, move, del);
         ul.append(li);
       }
       frag.append(ul);
@@ -324,13 +407,14 @@ export function mountNoteList(
       const msg = `${n} ${n === 1 ? 'note matches' : 'notes match'} "${query.trim()}"`;
       // Skip an identical rewrite so screen readers don't re-announce it.
       if (statusHost.textContent !== msg) statusHost.textContent = msg;
-    } else if (visible.length > 0 || notes.length === 0) {
+    } else if (visible.length > 0 || viewNotes.length === 0) {
       statusHost.replaceChildren();
     }
     listHost.replaceChildren(frag);
     if (focusKey) {
       const all = [
         ...actionsHost.querySelectorAll<HTMLElement>('[data-focus]'),
+        ...viewHost.querySelectorAll<HTMLElement>('[data-focus]'),
         ...filterRow.querySelectorAll<HTMLElement>('[data-focus]'),
         ...listHost.querySelectorAll<HTMLElement>('[data-focus]'),
       ];

@@ -697,3 +697,333 @@ describe('note list', () => {
     });
   });
 });
+
+describe('archived views', () => {
+  function seed() {
+    const store = createNotesStore(mem());
+    const a = store.create();
+    store.update(a.id, '# Alpha');
+    const b = store.create();
+    store.update(b.id, '# Beta');
+    const c = store.create();
+    store.update(c.id, '# Gamma');
+    return { store, a, b, c };
+  }
+  const btn = (label: string) =>
+    [...root.querySelectorAll<HTMLButtonElement>('button')].find(
+      (b) => b.textContent === label,
+    )!;
+  const titles = () =>
+    [...root.querySelectorAll('li .notes-item')].map((e) => e.textContent);
+
+  it('toggles views with a count and aria-pressed, starting on Notes', () => {
+    const { store, a } = seed();
+    store.setArchived(a.id, true);
+    mountNoteList(root, store);
+    const group = root.querySelector('[role="group"]');
+    expect(group?.getAttribute('aria-label')).toBe('Note views');
+    expect(btn('Notes').getAttribute('aria-pressed')).toBe('true');
+    expect(btn('Archived (1)').getAttribute('aria-pressed')).toBe('false');
+    expect(titles()).not.toContain('Alpha');
+    btn('Archived (1)').click();
+    expect(btn('Archived (1)').getAttribute('aria-pressed')).toBe('true');
+    expect(titles()).toEqual(['Alpha']);
+  });
+
+  it('orders archived notes by archivedAt desc, ignoring stars', () => {
+    const { store, a, b, c } = seed();
+    store.setStarred(a.id, true);
+    vi.spyOn(Date, 'now').mockReturnValue(1_000);
+    store.setArchived(a.id, true);
+    vi.spyOn(Date, 'now').mockReturnValue(2_000);
+    store.setArchived(b.id, true);
+    vi.spyOn(Date, 'now').mockReturnValue(3_000);
+    store.setArchived(c.id, true);
+    mountNoteList(root, store);
+    btn('Archived (3)').click();
+    expect(titles()).toEqual(['Gamma', 'Beta', 'Alpha']);
+  });
+
+  it('Archive needs no confirm; Restore returns the note; Delete confirms', () => {
+    const { store } = seed();
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    mountNoteList(root, store);
+    root.querySelector<HTMLButtonElement>('.notes-archive')?.click();
+    expect(confirm).not.toHaveBeenCalled();
+    expect(store.getState().notes.some((n) => n.archivedAt)).toBe(true);
+    btn('Archived (1)').click();
+    root.querySelector<HTMLButtonElement>('.notes-delete')?.click();
+    expect(confirm).toHaveBeenCalled();
+    expect(store.getState().notes).toHaveLength(3);
+    expect(root.querySelectorAll('.notes-restore')).toHaveLength(1);
+    expect(btn('Restore').className).toBe('notes-secondary');
+    root.querySelector<HTMLButtonElement>('.notes-restore')?.click();
+    expect(store.getState().notes.every((n) => !n.archivedAt)).toBe(true);
+    expect(root.querySelector('.notes-empty')?.textContent).toBe(
+      'No archived notes.',
+    );
+  });
+
+  it('scopes search to the view and keeps the query across switches', () => {
+    const { store, a } = seed();
+    store.setArchived(a.id, true);
+    mountNoteList(root, store);
+    const search = root.querySelector<HTMLInputElement>('.notes-search-input')!;
+    search.value = 'Alpha';
+    search.dispatchEvent(new Event('input'));
+    expect(titles()).toEqual([]);
+    btn('Archived (1)').click();
+    expect(search.value).toBe('Alpha');
+    expect(titles()).toEqual(['Alpha']);
+  });
+
+  it('moves focus to a neighbour, or the view toggle when none is left', () => {
+    const { store } = seed();
+    mountNoteList(root, store);
+    const first = root.querySelector<HTMLButtonElement>('.notes-archive')!;
+    first.focus();
+    first.click();
+    expect(document.activeElement?.className).toBe('notes-archive');
+    root.querySelector<HTMLButtonElement>('.notes-archive')!.focus();
+    root.querySelector<HTMLButtonElement>('.notes-archive')!.click();
+    root.querySelector<HTMLButtonElement>('.notes-archive')!.focus();
+    root.querySelector<HTMLButtonElement>('.notes-archive')!.click();
+    expect((document.activeElement as HTMLElement).dataset.focus).toBe(
+      'view:notes',
+    );
+  });
+
+  it('announces archive and restore in one persistent live region', () => {
+    const { store } = seed();
+    mountNoteList(root, store);
+    const live = root.querySelector('.notes-live') as HTMLElement;
+    expect(live.getAttribute('aria-live')).toBe('polite');
+    expect(live.getAttribute('role')).toBeNull();
+    root.querySelector<HTMLButtonElement>('.notes-archive')!.click();
+    expect(root.querySelector('.notes-live')).toBe(live);
+    expect(live.textContent).toMatch(/^Archived "\w+"\. Archived \(1\)\.$/);
+    btn('Archived (1)').click();
+    root.querySelector<HTMLButtonElement>('.notes-restore')!.click();
+    expect(live.textContent).toMatch(/^Restored "\w+"\. Archived \(0\)\.$/);
+  });
+
+  it('ignores a stale Archive click and leaves focus alone', () => {
+    const { store, a } = seed();
+    mountNoteList(root, store);
+    const stale = [
+      ...root.querySelectorAll<HTMLButtonElement>('.notes-archive'),
+    ].find((b) => b.dataset.focus === `archive:${a.id}`)!;
+    store.setArchived(a.id, true);
+    const live = root.querySelector('.notes-live') as HTMLElement;
+    live.textContent = '';
+    stale.click();
+    expect(live.textContent).toBe('');
+    const search = root.querySelector<HTMLInputElement>('.notes-search-input')!;
+    search.focus();
+    store.create();
+    expect(document.activeElement).toBe(search);
+  });
+
+  it('moves focus to New note when a deleted row vanishes', () => {
+    const store = createNotesStore(mem());
+    const n = store.create();
+    store.update(n.id, '# Only');
+    mountNoteList(root, store);
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const del = root.querySelector<HTMLButtonElement>('.notes-delete')!;
+    del.focus();
+    del.click();
+    expect((document.activeElement as HTMLElement).dataset.focus).toBe('new');
+  });
+
+  it('keeps New note and Export all working from Archived', () => {
+    const { store } = seed();
+    store.setArchivedMany(
+      store.getState().notes.map((n) => n.id),
+      true,
+    );
+    const exp = vi
+      .spyOn(exportModule, 'exportAllNotes')
+      .mockImplementation(() => undefined);
+    mountNoteList(root, store);
+    expect(root.querySelector('.notes-empty')?.textContent).toContain(
+      'No notes yet',
+    );
+    expect(
+      root.querySelector<HTMLButtonElement>('.notes-export')?.disabled,
+    ).toBe(false);
+    btn('Archived (3)').click();
+    root.querySelector<HTMLButtonElement>('.notes-export')?.click();
+    expect(exp).toHaveBeenCalled();
+    root.querySelector<HTMLButtonElement>('.notes-new')?.click();
+    expect(btn('Notes').getAttribute('aria-pressed')).toBe('true');
+    expect(titles()).toEqual(['Untitled']);
+  });
+
+  it('updates the count on an external storage change and starts fresh on Notes', () => {
+    const storage = mem();
+    const store = createNotesStore(storage);
+    store.update(store.create().id, '# One');
+    mountNoteList(root, store);
+    btn('Archived (0)').click();
+    const setItem = vi.spyOn(storage, 'setItem');
+    const note = (id: string, archivedAt?: number) => ({
+      id,
+      body: `# ${id}`,
+      createdAt: 1,
+      updatedAt: 2,
+      ...(archivedAt ? { archivedAt } : {}),
+    });
+    storage.setItem(
+      'quill:v1',
+      JSON.stringify([note('a', 5), note('b', 6), note('c')]),
+    );
+    window.dispatchEvent(new StorageEvent('storage', { key: 'quill:v1' }));
+    expect(btn('Archived (2)')).toBeTruthy();
+    setItem.mockClear();
+    const second = document.createElement('nav');
+    document.body.append(second);
+    mountNoteList(second, store);
+    const pressed = (label: string) =>
+      [...second.querySelectorAll('button')]
+        .find((b) => b.textContent === label)
+        ?.getAttribute('aria-pressed');
+    expect(pressed('Notes')).toBe('true');
+    expect(pressed('Archived (2)')).toBe('false');
+    expect(setItem).not.toHaveBeenCalled();
+    second.remove();
+  });
+
+  it('labels Archive and Restore per note, next to Delete, and selects from Archived', () => {
+    const { store, a } = seed();
+    mountNoteList(root, store);
+    const row = root.querySelector('li')!;
+    const kinds = [...row.querySelectorAll('button')].map((b) => b.className);
+    const ai = kinds.indexOf('notes-archive');
+    expect(ai).toBeGreaterThan(-1);
+    expect(kinds[ai + 1]).toBe('notes-delete');
+    const title = row.querySelector('.notes-item')!.textContent;
+    expect(
+      row.querySelector('.notes-archive')?.getAttribute('aria-label'),
+    ).toBe(`Archive "${title}"`);
+    store.setArchived(a.id, true);
+    btn('Archived (1)').click();
+    const arow = root.querySelector('li')!;
+    expect(arow.querySelector('.notes-archive')).toBeNull();
+    expect(
+      arow.querySelector('.notes-restore')?.getAttribute('aria-label'),
+    ).toBe('Restore "Alpha"');
+    const select = vi.spyOn(store, 'select');
+    arow.querySelector<HTMLButtonElement>('.notes-item')!.click();
+    expect(select).toHaveBeenCalledWith(a.id);
+    const names = [...root.querySelectorAll('.notes-list button')].map(
+      (b) => b.getAttribute('aria-label') ?? b.textContent,
+    );
+    expect(names).not.toContain('Restore');
+  });
+
+  it('moves aria-current to the next, previous or no row when the open note is archived', () => {
+    const { store, a, b, c } = seed();
+    const current = () =>
+      root.querySelector('[aria-current="true"]')?.textContent;
+    const archiveOpen = (title: string) =>
+      root
+        .querySelector<HTMLButtonElement>(`[aria-label='Archive "${title}"']`)!
+        .click();
+    mountNoteList(root, store);
+    const order = titles();
+    const byTitle: Record<string, string> = {
+      Alpha: a.id,
+      Beta: b.id,
+      Gamma: c.id,
+    };
+    store.select(byTitle[order[0]!]!);
+    expect(current()).toBe(order[0]);
+    archiveOpen(order[0]!);
+    expect(current()).toBe(order[1]);
+    store.select(byTitle[order[2]!]!);
+    archiveOpen(order[2]!);
+    expect(current()).toBe(order[1]);
+    archiveOpen(order[1]!);
+    expect(current()).toBeUndefined();
+  });
+
+  it('scopes the tag filter to the view and keeps or clears the tag on a switch', () => {
+    const { store, a, b } = seed();
+    store.setTags(a.id, ['work']);
+    store.setTags(b.id, ['home', 'work']);
+    store.setArchived(b.id, true);
+    mountNoteList(root, store);
+    const select = () =>
+      root.querySelector<HTMLSelectElement>('.notes-tag-select')!;
+    const opts = () => [...select().options].map((o) => o.textContent);
+    expect(opts()).toEqual(['All tags', 'work']);
+    select().value = 'work';
+    select().dispatchEvent(new Event('change', { bubbles: true }));
+    btn('Archived (1)').click();
+    expect(opts()).toEqual(['All tags', 'home', 'work']);
+    expect(select().value).toBe('work');
+    select().value = 'home';
+    select().dispatchEvent(new Event('change', { bubbles: true }));
+    btn('Notes').click();
+    expect(select().value).toBe('');
+  });
+
+  it('says No archived notes only in Archived and keeps first-run text in Notes', () => {
+    const { store } = seed();
+    store.setArchivedMany(
+      store.getState().notes.map((n) => n.id),
+      true,
+    );
+    mountNoteList(root, store);
+    expect(root.querySelector('.notes-empty')?.textContent).toBe(
+      'No notes yet. Create one to get started.',
+    );
+  });
+
+  it('keeps the nav Restore label and opens the file picker', () => {
+    const { store } = seed();
+    mountNoteList(root, store);
+    const input = root.querySelector<HTMLInputElement>('input[type="file"]')!;
+    const click = vi.spyOn(input, 'click');
+    root
+      .querySelector<HTMLButtonElement>(
+        '.notes-actions [data-focus="restore"]',
+      )!
+      .click();
+    expect(click).toHaveBeenCalled();
+    expect(
+      root.querySelector('.notes-actions [data-focus="restore"]')?.textContent,
+    ).toBe('Restore');
+  });
+
+  it('focuses the same-kind control of the replacing row after Restore, else the toggle', () => {
+    const { store } = seed();
+    store.setArchivedMany(
+      store.getState().notes.map((n) => n.id),
+      true,
+    );
+    mountNoteList(root, store);
+    btn('Archived (3)').click();
+    const first = root.querySelector<HTMLButtonElement>('.notes-restore')!;
+    first.focus();
+    first.click();
+    const active = document.activeElement as HTMLElement;
+    expect(active.className).toBe('notes-restore');
+    expect(active).not.toBe(document.body);
+    for (let i = 0; i < 2; i++) {
+      const r = root.querySelector<HTMLButtonElement>('.notes-restore')!;
+      r.focus();
+      r.click();
+    }
+    expect((document.activeElement as HTMLElement).dataset.focus).toBe(
+      'view:archived',
+    );
+  });
+
+  it('styles the new buttons with focus rings and no colour literals', () => {
+    const css = readFileSync('src/notes/list.css', 'utf8');
+    expect(css).toContain('.notes-view:focus-visible');
+    expect(css).not.toMatch(/#[0-9a-f]{3,8}\b|rgb\(|hsl\(|oklch\(/i);
+  });
+});
