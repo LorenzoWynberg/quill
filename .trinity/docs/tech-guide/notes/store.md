@@ -4,7 +4,7 @@
 
 ## Storage
 
-- Notes are a JSON array of `{ id, body, createdAt, updatedAt, starred? }` under the `localStorage` key `quill:v1`. The selected note id is under `quill:v1:selected`.
+- Notes are a JSON array of `{ id, body, createdAt, updatedAt, starred?, tags }` under the `localStorage` key `quill:v1`. The selected note id is under `quill:v1:selected`.
 - On load, a missing key, corrupt JSON or a non-array value gives an empty list without throwing; entries that are not valid notes are dropped.
 - `getState()` returns starred notes first, then most-recent-first by `updatedAt` within each group. `create` and `update` bump `updatedAt` to stay strictly above the newest existing value, so order is stable within one millisecond.
 - If the selected id is missing or unknown, the most recently updated note is selected. Deleting the selected note selects the most recent remaining one.
@@ -23,11 +23,11 @@ The store listens for `storage` events on `quill:v1` (and a `null` key, which me
 
 ## List
 
-`mountNoteList(root, store, options?)` renders a New note, Backup and Restore button row, a search input and Clear search button (see [search.md](search.md)), the alert, a `role="status"` notice, a second `role="status"` region for search results, and one open and one Delete button per note. Delete asks `window.confirm` first. After each render, focus returns to the element with the same `data-focus` key, looked up in both the actions row and the list, or to New note if it is gone. It returns an unsubscribe function.
+`mountNoteList(root, store, options?)` renders a New note, Backup and Restore button row, a search input and Clear search button (see [search.md](search.md)), a "Filter by tag" select (see [tag-filter.md](tag-filter.md)), the alert, a `role="status"` notice, a second `role="status"` region for search results, and one open and one Delete button per note. Delete asks `window.confirm` first. After each render, focus returns to the element with the same `data-focus` key, looked up in both the actions row and the list, or to New note if it is gone. It returns an unsubscribe function.
 
 ## Backup and restore
 
-`exportBackup()` returns JSON `{ app: 'quill', format: 1, exportedAt, notes }` with each note's `id`, `body`, `createdAt` and `updatedAt`. The Backup button downloads it as `quill-backup-YYYY-MM-DD.json`.
+`exportBackup()` returns JSON `{ app: 'quill', format: 1, exportedAt, notes }` with each note's `id`, `body`, `createdAt`, `updatedAt` and `tags` (format stays 1). Tags are described in [tags.md](tags.md); a backup with no `tags` restores them as `[]`, and one with `tags` restores them through `normaliseTags`. The Backup button downloads it as `quill-backup-YYYY-MM-DD.json`.
 
 `importBackup(text)` is a non-destructive merge and returns an `ImportResult`:
 

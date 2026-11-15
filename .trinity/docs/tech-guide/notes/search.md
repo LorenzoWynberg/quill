@@ -15,3 +15,7 @@
 - The search row is hidden while there are no notes, and a query is dropped when the list empties.
 - When notes exist but none match, a `role="status"` region shows `No notes match "<query>"`. While a query is set and notes match, the same region announces the count: `1 note matches "<query>"` or `N notes match "<query>"`. It is emptied when the query is cleared.
 - Focus restore after a render looks in both the actions row and the list.
+
+## Tag filter
+
+The tag filter composes with the query: a note must match both. New note clears both the query and the tag. When a tag is active the empty-state message names it. See [tag-filter.md](tag-filter.md).
